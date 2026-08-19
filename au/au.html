@@ -1,0 +1,752 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Project FE - Minimal LISP VM (Enhanced Go To Line/Col Info)</title>
+    <style>
+        :root {
+            --bg-color: #121214;
+            --panel-bg: #1e1e24;
+            --accent: #b13e53;
+            --accent-hover: #ef7d57;
+            --text: #f4f4f4;
+            --text-dim: #94b0c2;
+            --border: #333c57;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text);
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+            overflow: hidden;
+        }
+
+        header {
+            background-color: var(--panel-bg);
+            border-bottom: 1px solid var(--border);
+            padding: 0.75rem 1.5rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-shrink: 0;
+        }
+
+        header h1 {
+            font-size: 1.25rem;
+            font-weight: 600;
+            letter-spacing: 0.05em;
+            color: #ffcd75;
+        }
+
+        .main-container {
+            display: flex;
+            flex: 1;
+            gap: 1rem;
+            padding: 1rem;
+            overflow: hidden;
+            min-height: 0;
+        }
+
+        .panel {
+            background-color: var(--panel-bg);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        .left-panel {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            min-width: 0;
+        }
+
+        .right-panel {
+            width: 420px;
+            padding: 1rem;
+            align-items: center;
+            justify-content: center;
+            flex-shrink: 0;
+            overflow-y: auto;
+        }
+
+        .toolbar {
+            padding: 0.75rem 1rem;
+            background-color: rgba(0, 0, 0, 0.2);
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            gap: 0.5rem;
+            flex-shrink: 0;
+        }
+
+        button {
+            background-color: var(--accent);
+            color: white;
+            border: none;
+            padding: 0.5rem 1.5rem;
+            font-weight: 500;
+            border-radius: 4px;
+            cursor: pointer;
+            transition: background-color 0.2s;
+        }
+
+        button:hover {
+            background-color: var(--accent-hover);
+        }
+
+        textarea {
+            flex: 1;
+            background-color: #1a1c2c;
+            color: #f4f4f4;
+            border: none;
+            padding: 1rem;
+            font-family: 'Courier New', Courier, monospace;
+            font-size: 0.95rem;
+            resize: none;
+            line-height: 1.5;
+        }
+
+        textarea:focus {
+            outline: none;
+        }
+
+        .output-box {
+            height: 120px;
+            background-color: #1a1c2c;
+            border-top: 1px solid var(--border);
+            padding: 0.75rem 1rem;
+            font-family: 'Courier New', Courier, monospace;
+            font-size: 0.85rem;
+            color: var(--text-dim);
+            overflow-y: auto;
+            white-space: pre-wrap;
+            flex-shrink: 0;
+        }
+
+        .canvas-wrapper {
+            background-color: #1a1c2c;
+            border: 4px solid var(--border);
+            border-radius: 4px;
+            overflow: hidden;
+            box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.5);
+            max-width: 100%;
+            position: relative;
+        }
+
+        canvas {
+            display: block;
+            width: 384px;
+            height: 384px;
+            image-rendering: pixelated;
+            image-rendering: crisp-edges;
+            cursor: crosshair;
+            outline: none;
+        }
+
+        .canvas-label {
+            margin-top: 0.75rem;
+            font-size: 0.85rem;
+            color: var(--text-dim);
+            text-align: center;
+        }
+    </style>
+</head>
+<body>
+
+    <header>
+        <h1>Project FE // Minimal LISP VM</h1>
+    </header>
+
+    <div class="main-container">
+        <!-- Left Panel: Code & Output -->
+        <div class="panel left-panel">
+            <div class="toolbar">
+                <button onclick="runLisp()">RUN</button>
+                <button onclick="stopLoop()" style="background-color: #333c57;">STOP</button>
+                <button onclick="clearCanvasBtn()" style="background-color: #566c86;">CLEAR</button>
+            </div>
+            <textarea id="code-input">; Project FE - Keyboard Controlled 8x8 Rectangle Demo
+(begin
+  (define x 60)
+  (define y 60)
+  
+  (define setup 
+    (lambda () 
+      (begin
+        (cls 0))))
+
+  (define update 
+    (lambda (dt) 
+      (begin
+        ; Update position based on arrow keys (speed ~ 60 pixels per second)
+        (if (key? "ArrowLeft")  (set! x (- x (* 60 dt))) 0)
+        (if (key? "ArrowRight") (set! x (+ x (* 60 dt))) 0)
+        (if (key? "ArrowUp")    (set! y (- y (* 60 dt))) 0)
+        (if (key? "ArrowDown")  (set! y (+ y (* 60 dt))) 0)
+
+        ; Clear screen and draw 8x8 filled rectangle (Color 5: Green)
+        (cls 0)
+        (frect x y 8 8 5))))
+)</textarea>
+            <div id="output" class="output-box">Ready. Click canvas and hit RUN.</div>
+        </div>
+
+        <!-- Right Panel: Canvas -->
+        <div class="panel right-panel">
+            <div class="canvas-wrapper">
+                <canvas id="vmCanvas" width="128" height="128" tabindex="0" oncontextmenu="return false;"></canvas>
+            </div>
+            <div class="canvas-label">Canvas: 128x128px (Click to capture input)</div>
+        </div>
+    </div>
+
+<script>
+    // --- Canvas & Captured Input State Setup ---
+    const canvas = document.getElementById('vmCanvas');
+    const ctx = canvas.getContext('2d');
+    const WIDTH = 128;
+    const HEIGHT = 128;
+
+    let mouseX = WIDTH / 2;
+    let mouseY = HEIGHT / 2;
+    
+    const mouseButtons = {};
+    const keys = {};
+
+    canvas.addEventListener('click', () => {
+        canvas.focus();
+        if (canvas.requestPointerLock) {
+            canvas.requestPointerLock();
+        }
+    });
+
+    document.addEventListener('mousemove', e => {
+        if (document.pointerLockElement === canvas) {
+            mouseX = Math.max(0, Math.min(WIDTH - 1, mouseX + e.movementX * 0.5));
+            mouseY = Math.max(0, Math.min(HEIGHT - 1, mouseY + e.movementY * 0.5));
+        } else {
+            const rect = canvas.getBoundingClientRect();
+            const clientX = e.clientX - rect.left;
+            const clientY = e.clientY - rect.top;
+            if (clientX >= 0 && clientX <= rect.width && clientY >= 0 && clientY <= rect.height) {
+                mouseX = Math.floor(clientX * (WIDTH / rect.width));
+                mouseY = Math.floor(clientY * (HEIGHT / rect.height));
+            }
+        }
+    });
+
+    // --- Textarea Custom Shortcuts (Tab & Ctrl+L Line/Col Info) ---
+    const textarea = document.getElementById('code-input');
+    textarea.addEventListener('keydown', e => {
+        // Tab inserts 2 spaces
+        if (e.key === 'Tab') {
+            e.preventDefault();
+            const start = textarea.selectionStart;
+            const end = textarea.selectionEnd;
+            
+            textarea.value = textarea.value.substring(0, start) + '  ' + textarea.value.substring(end);
+            textarea.selectionStart = textarea.selectionEnd = start + 2;
+        }
+
+        // Ctrl+L triggers go to line:column prompt with current info
+        if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'l') {
+            e.preventDefault();
+            
+            // Calculate current line and column
+            const textUpToCursor = textarea.value.substring(0, textarea.selectionStart);
+            const lines = textUpToCursor.split('\n');
+            const currentLine = lines.length;
+            const currentCol = lines[lines.length - 1].length + 1;
+            const totalLines = textarea.value.split('\n').length;
+
+            const input = prompt(`Current: Line ${currentLine}, Col ${currentCol} | Total Lines: ${totalLines}\nGo to line:column (e.g. 5:12):`);
+            
+            if (input) {
+                const parts = input.split(':');
+                const targetLine = parseInt(parts[0], 10);
+                const targetCol = parts[1] ? parseInt(parts[1], 10) : 1;
+
+                if (!isNaN(targetLine) && targetLine > 0) {
+                    const allLines = textarea.value.split('\n');
+                    let charIndex = 0;
+                    
+                    for (let i = 0; i < Math.min(targetLine - 1, allLines.length); i++) {
+                        charIndex += allLines[i].length + 1;
+                    }
+                    
+                    charIndex += Math.max(0, targetCol - 1);
+                    textarea.focus();
+                    textarea.setSelectionRange(charIndex, charIndex);
+                }
+            }
+        }
+    });
+
+    // Global Window Key Listeners for Reliable Multi-Key Tracking
+    window.addEventListener('keydown', e => {
+        if (e.target.tagName === 'TEXTAREA' || e.target.tagName === 'INPUT') {
+            return;
+        }
+
+        keys[e.key.toLowerCase()] = true;
+        keys[e.code] = true;
+        
+        if (["Space", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(e.code)) {
+            e.preventDefault();
+        }
+    });
+
+    window.addEventListener('keyup', e => {
+        if (e.target.tagName === 'TEXTAREA' || e.target.tagName === 'INPUT') {
+            return;
+        }
+
+        keys[e.key.toLowerCase()] = false;
+        keys[e.code] = false;
+    });
+
+    window.addEventListener('mousedown', e => {
+        if (document.pointerLockElement === canvas || e.target === canvas) {
+            mouseButtons[e.button] = true;
+        }
+    });
+    
+    window.addEventListener('mouseup', e => {
+        mouseButtons[e.button] = false;
+    });
+
+    const PALETTE = [
+        '#1a1c2c', '#5d275d', '#b13e53', '#ef7d57',
+        '#ffcd75', '#a7f070', '#38b764', '#257179',
+        '#29366f', '#3b5dc9', '#41a6f6', '#73eff7',
+        '#f4f4f4', '#94b0c2', '#566c86', '#333c57'
+    ];
+
+    function clearCanvas(colorIndex = 0) {
+        const cIdx = Math.floor(colorIndex) % PALETTE.length;
+        ctx.fillStyle = PALETTE[cIdx < 0 ? 0 : cIdx];
+        ctx.fillRect(0, 0, WIDTH, HEIGHT);
+    }
+
+    function setPixel(x, y, colorIndex) {
+        const xi = Math.floor(x);
+        const yi = Math.floor(y);
+        if (xi >= 0 && xi < WIDTH && yi >= 0 && yi < HEIGHT) {
+            const cIdx = Math.floor(colorIndex) % PALETTE.length;
+            ctx.fillStyle = PALETTE[cIdx < 0 ? 0 : cIdx];
+            ctx.fillRect(xi, yi, 1, 1);
+        }
+    }
+
+    function drawBresenhamLine(x0, y0, x1, y1, colorIndex) {
+        let ix0 = Math.floor(x0);
+        let iy0 = Math.floor(y0);
+        const ix1 = Math.floor(x1);
+        const iy1 = Math.floor(y1);
+
+        const dx = Math.abs(ix1 - ix0);
+        const dy = Math.abs(iy1 - iy0);
+        const sx = (ix0 < ix1) ? 1 : -1;
+        const sy = (iy0 < iy1) ? 1 : -1;
+        let err = dx - dy;
+
+        while (true) {
+            setPixel(ix0, iy0, colorIndex);
+            if (ix0 === ix1 && iy0 === iy1) break;
+            const e2 = 2 * err;
+            if (e2 > -dy) {
+                err -= dy;
+                ix0 += sx;
+            }
+            if (e2 < dx) {
+                err += dx;
+                iy0 += sy;
+            }
+        }
+    }
+
+    function drawRect(x, y, w, h, colorIndex) {
+        const ix = Math.floor(x);
+        const iy = Math.floor(y);
+        const iw = Math.floor(w);
+        const ih = Math.floor(h);
+        drawBresenhamLine(ix, iy, ix + iw, iy, colorIndex);
+        drawBresenhamLine(ix + iw, iy, ix + iw, iy + ih, colorIndex);
+        drawBresenhamLine(ix + iw, iy + ih, ix, iy + ih, colorIndex);
+        drawBresenhamLine(ix, iy + ih, ix, iy, colorIndex);
+    }
+
+    function drawFilledRect(x, y, w, h, colorIndex) {
+        const ix = Math.floor(x);
+        const iy = Math.floor(y);
+        const iw = Math.floor(w);
+        const ih = Math.floor(h);
+        for (let dy = 0; dy <= ih; dy++) {
+            for (let dx = 0; dx <= iw; dx++) {
+                setPixel(ix + dx, iy + dy, colorIndex);
+            }
+        }
+    }
+
+    function drawCircle(xc, yc, r, colorIndex) {
+        let x = 0;
+        let y = Math.floor(r);
+        let d = 3 - 2 * r;
+        
+        const ix = Math.floor(xc);
+        const iy = Math.floor(yc);
+
+        const plotSymmetric = (cx, cy, px, py, c) => {
+            setPixel(cx + px, cy + py, c);
+            setPixel(cx - px, cy + py, c);
+            setPixel(cx + px, cy - py, c);
+            setPixel(cx - px, cy - py, c);
+            setPixel(cx + py, cy + px, c);
+            setPixel(cx - py, cy + px, c);
+            setPixel(cx + py, cy - px, c);
+            setPixel(cx - py, cy - px, c);
+        };
+
+        plotSymmetric(ix, iy, x, y, colorIndex);
+        while (y >= x) {
+            x++;
+            if (d > 0) {
+                y--;
+                d = d + 4 * (x - y) + 10;
+            } else {
+                d = d + 4 * x + 6;
+            }
+            plotSymmetric(ix, iy, x, y, colorIndex);
+        }
+    }
+
+    function drawFilledCircle(xc, yc, r, colorIndex) {
+        let x = 0;
+        let y = Math.floor(r);
+        let d = 3 - 2 * r;
+
+        const ix = Math.floor(xc);
+        const iy = Math.floor(yc);
+
+        const drawHorizontalLine = (x1, x2, yCoord, c) => {
+            for (let px = x1; px <= x2; px++) {
+                setPixel(px, yCoord, c);
+            }
+        };
+
+        const fillSymmetric = (cx, cy, px, py, c) => {
+            drawHorizontalLine(cx - px, cx + px, cy + py, c);
+            drawHorizontalLine(cx - px, cx + px, cy - py, c);
+            drawHorizontalLine(cx - py, cx + py, cy + px, c);
+            drawHorizontalLine(cx - py, cx + py, cy - px, c);
+        };
+
+        fillSymmetric(ix, iy, x, y, colorIndex);
+        while (y >= x) {
+            x++;
+            if (d > 0) {
+                y--;
+                d = d + 4 * (x - y) + 10;
+            } else {
+                d = d + 4 * x + 6;
+            }
+            fillSymmetric(ix, iy, x, y, colorIndex);
+        }
+    }
+
+    function getPixel(x, y) {
+        const xi = Math.floor(x);
+        const yi = Math.floor(y);
+        if (xi >= 0 && xi < WIDTH && yi >= 0 && yi < HEIGHT) {
+            const pixelData = ctx.getImageData(xi, yi, 1, 1).data;
+            const hex = rgbToHex(pixelData[0], pixelData[1], pixelData[2]);
+            return PALETTE.indexOf(hex);
+        }
+        return -1;
+    }
+
+    function rgbToHex(r, g, b) {
+        return "#" + ((1 << 24) + (r << 16) + (g << 8) + b).toString(16).slice(1);
+    }
+
+    clearCanvas(0);
+
+    function logToConsole(...messages) {
+        const outputEl = document.getElementById('output');
+        const text = messages.map(m => {
+            if (Array.isArray(m)) return '(' + m.join(' ') + ')';
+            return String(m);
+        }).join(' ');
+        
+        outputEl.style.color = '#a7f070';
+        outputEl.textContent += (outputEl.textContent ? '\n' : '') + text;
+        outputEl.scrollTop = outputEl.scrollHeight;
+    }
+
+    function tokenize(input) {
+        return input.replace(/;.*/g, '')
+                    .replace(/"([^"]*)"/g, (match, p1) => `__STR__${btoa(p1)}`)
+                    .replace(/\(/g, ' ( ')
+                    .replace(/\)/g, ' ) ')
+                    .trim()
+                    .split(/\s+/)
+                    .filter(token => token.length > 0);
+    }
+
+    function parse(tokens) {
+        if (tokens.length === 0) throw new Error('Unexpected EOF while reading');
+        const token = tokens.shift();
+        if (token === '(') {
+            const list = [];
+            while (tokens[0] !== ')') {
+                if (tokens.length === 0) throw new Error('Missing closing parenthesis');
+                list.push(parse(tokens));
+            }
+            tokens.shift(); 
+            return list;
+        } else if (token === ')') {
+            throw new Error('Unexpected closing parenthesis');
+        } else {
+            return parseAtom(token);
+        }
+    }
+
+    function parseAtom(token) {
+        if (token.startsWith('__STR__')) {
+            return atob(token.slice(7));
+        }
+        if (token === "'t" || token === "t") return true;
+        if (token === "nil" || token === "NIL") return [];
+        if (!isNaN(Number(token))) return Number(token);
+        if (token.startsWith("'")) return ['quote', parseAtom(token.slice(1))];
+        return token;
+    }
+
+    class Environment {
+        constructor(bindings = {}, outer = null) {
+            this.bindings = bindings;
+            this.outer = outer;
+        }
+        find(variable) {
+            if (variable in this.bindings) return this;
+            if (this.outer) return this.outer.find(variable);
+            throw new Error(`Unbound symbol: ${variable}`);
+        }
+        set(variable, value) {
+            this.bindings[variable] = value;
+        }
+        update(variable, value) {
+            try {
+                const env = this.find(variable);
+                env.bindings[variable] = value;
+                return value;
+            } catch (e) {
+                throw new Error(`Cannot set! unbound symbol: ${variable}`);
+            }
+        }
+    }
+
+    function evaluate(exp, env) {
+        if (typeof exp === 'number') return exp;
+        if (typeof exp === 'boolean') return exp;
+        if (typeof exp === 'string') {
+            if (env) {
+                try {
+                    return env.find(exp).bindings[exp];
+                } catch (e) {
+                    return exp;
+                }
+            }
+            return exp;
+        }
+        if (exp === null) return [];
+
+        const head = exp[0];
+
+        if (head === 'quote') return exp[1];
+        if (head === 'if') {
+            const [, condition, thenExpr, elseExpr] = exp;
+            if (evaluate(condition, env)) {
+                return evaluate(thenExpr, env);
+            } else {
+                return elseExpr !== undefined ? evaluate(elseExpr, env) : [];
+            }
+        }
+        if (head === 'and') {
+            let res = true;
+            for (let i = 1; i < exp.length; i++) {
+                res = evaluate(exp[i], env);
+                if (!res) return res;
+            }
+            return res;
+        }
+        if (head === 'or') {
+            let res = false;
+            for (let i = 1; i < exp.length; i++) {
+                res = evaluate(exp[i], env);
+                if (res) return res;
+            }
+            return res;
+        }
+        if (head === 'not') {
+            return !evaluate(exp[1], env);
+        }
+        if (head === 'while') {
+            const [, conditionExpr, ...bodyExprs] = exp;
+            let result = [];
+            while (evaluate(conditionExpr, env)) {
+                for (let i = 0; i < bodyExprs.length; i++) {
+                    result = evaluate(bodyExprs[i], env);
+                }
+            }
+            return result;
+        }
+        if (head === 'define') {
+            const [, symbol, expr] = exp;
+            const val = evaluate(expr, env);
+            env.set(symbol, val);
+            return symbol;
+        }
+        if (head === 'set!') {
+            const [, symbol, expr] = exp;
+            const val = evaluate(expr, env);
+            return env.update(symbol, val);
+        }
+        if (head === 'print') {
+            const args = exp.slice(1).map(arg => evaluate(arg, env));
+            logToConsole(...args);
+            return args[args.length - 1];
+        }
+        if (head === 'lambda') {
+            const [, params, body] = exp;
+            return (...args) => {
+                const localBindings = {};
+                for (let i = 0; i < params.length; i++) localBindings[params[i]] = args[i];
+                return evaluate(body, new Environment(localBindings, env));
+            };
+        }
+        if (head === 'begin') {
+            let res = [];
+            for (let i = 1; i < exp.length; i++) res = evaluate(exp[i], env);
+            return res;
+        }
+
+        const proc = evaluate(head, env);
+        const args = exp.slice(1).map(arg => evaluate(arg, env));
+        if (typeof proc !== 'function') throw new Error(`Not a function: ${head}`);
+        return proc(...args);
+    }
+
+    let animationFrameId = null;
+    let lastTime = 0;
+
+    function runLisp() {
+        stopLoop();
+        document.getElementById('output').textContent = "";
+        const code = document.getElementById('code-input').value;
+        const outputEl = document.getElementById('output');
+
+        const freshEnv = new Environment({
+            '+': (a, b) => a + b,
+            '-': (a, b) => a - b,
+            '*': (a, b) => a * b,
+            '/': (a, b) => a / b,
+            '<': (a, b) => a < b,
+            '>': (a, b) => a > b,
+            '<=': (a, b) => a <= b,
+            '>=': (a, b) => a >= b,
+            '=': (a, b) => a === b,
+            '/=': (a, b) => a !== b,
+            'mod': (a, b) => a % b,
+            'abs': a => Math.abs(a),
+            'atom': x => !Array.isArray(x),
+            'eq': (a, b) => a === b,
+            'car': x => x[0],
+            'cdr': x => x.slice(1),
+            'cons': (x, y) => [x].concat(y),
+            'cls': (c = 0) => { clearCanvas(c); return c; },
+            'pset': (x, y, c) => { setPixel(x, y, c); return c; },
+            'line': (x0, y0, x1, y1, c) => { drawBresenhamLine(x0, y0, x1, y1, c); return c; },
+            'rect': (x, y, w, h, c) => { drawRect(x, y, w, h, c); return c; },
+            'frect': (x, y, w, h, c) => { drawFilledRect(x, y, w, h, c); return c; },
+            'circ': (x, y, r, c) => { drawCircle(x, y, r, c); return c; },
+            'fcirc': (x, y, r, c) => { drawFilledCircle(x, y, r, c); return c; },
+            'pget': (x, y) => getPixel(x, y),
+            'rand': n => Math.floor(Math.random() * n),
+            'time': () => Date.now(),
+            'clock': () => performance.now(),
+            'mouse-x': () => mouseX,
+            'mouse-y': () => mouseY,
+            'mouse-btn': (buttonIndex = 0) => !!mouseButtons[buttonIndex],
+            'key?': k => !!keys[k.toLowerCase()] || !!keys[k]
+        });
+
+        try {
+            const tokens = tokenize(code);
+            while (tokens.length > 0) {
+                evaluate(parse(tokens), freshEnv);
+            }
+
+            try {
+                const setupFn = evaluate('setup', freshEnv);
+                if (typeof setupFn === 'function') setupFn();
+            } catch (e) { /* setup optional */ }
+
+            try {
+                const updateFn = evaluate('update', freshEnv);
+                if (typeof updateFn === 'function') {
+                    lastTime = performance.now();
+                    const loop = (currentTime) => {
+                        const dt = (currentTime - lastTime) / 1000;
+                        lastTime = currentTime;
+                        try {
+                            updateFn(dt);
+                        } catch (loopErr) {
+                            outputEl.style.color = '#b13e53';
+                            outputEl.textContent += `\n> Loop Error: ${loopErr.message}`;
+                            stopLoop();
+                            return;
+                        }
+                        animationFrameId = requestAnimationFrame(loop);
+                    };
+                    animationFrameId = requestAnimationFrame(loop);
+                }
+            } catch (e) { /* update optional */ }
+
+        } catch (err) {
+            outputEl.style.color = '#b13e53';
+            outputEl.textContent = `> Error\n${err.message}`;
+        }
+    }
+
+    function stopLoop() {
+        if (animationFrameId) {
+            cancelAnimationFrame(animationFrameId);
+            animationFrameId = null;
+            logToConsole("Animation loop stopped.");
+        }
+        if (document.exitPointerLock) {
+            document.exitPointerLock();
+        }
+    }
+
+    function clearCanvasBtn() {
+        stopLoop();
+        clearCanvas(0);
+        document.getElementById('output').textContent = "Canvas cleared.";
+    }
+</script>
+</body>
+</html>
