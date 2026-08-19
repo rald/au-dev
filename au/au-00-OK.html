@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Project AU - Minimal LISP VM</title>
+    <title>Project FE - Minimal LISP VM (Enhanced Go To Line/Col Info)</title>
     <style>
         :root {
             --bg-color: #121214;
@@ -166,7 +166,7 @@
 <body>
 
     <header>
-        <h1>Project AU // Minimal LISP VM</h1>
+        <h1>Project FE // Minimal LISP VM</h1>
     </header>
 
     <div class="main-container">
@@ -177,7 +177,29 @@
                 <button onclick="stopLoop()" style="background-color: #333c57;">STOP</button>
                 <button onclick="clearCanvasBtn()" style="background-color: #566c86;">CLEAR</button>
             </div>
-            <textarea id="code-input"></textarea>
+            <textarea id="code-input">; Project FE - Keyboard Controlled 8x8 Rectangle Demo
+(begin
+  (define x 60)
+  (define y 60)
+  
+  (define setup 
+    (lambda () 
+      (begin
+        (cls 0))))
+
+  (define update 
+    (lambda (dt) 
+      (begin
+        ; Update position based on arrow keys (speed ~ 60 pixels per second)
+        (if (key? "ArrowLeft")  (set! x (- x (* 60 dt))) 0)
+        (if (key? "ArrowRight") (set! x (+ x (* 60 dt))) 0)
+        (if (key? "ArrowUp")    (set! y (- y (* 60 dt))) 0)
+        (if (key? "ArrowDown")  (set! y (+ y (* 60 dt))) 0)
+
+        ; Clear screen and draw 8x8 filled rectangle (Color 5: Green)
+        (cls 0)
+        (frect x y 8 8 5))))
+)</textarea>
             <div id="output" class="output-box">Ready. Click canvas and hit RUN.</div>
         </div>
 
