@@ -1,0 +1,82 @@
+#| =====================================================================
+   Project AU - List System Library & Test Suite (test-00.au)
+   ===================================================================== |#
+
+; 1. Get item at index n (0-indexed)
+(define list-get 
+    (lambda (lst n)
+        (if (= n 0)
+            (car lst)
+            (list-get (cdr lst) (- n 1)))))
+
+; 2. Set/replace item at index n with a new value val
+(define list-set 
+    (lambda (lst n val)
+        (if (= n 0)
+            (cons val (cdr lst))
+            (cons (car lst) (list-set (cdr lst) (- n 1) val)))))
+
+; 3. Push item to the back of the list
+(define list-push 
+    (lambda (lst val)
+        (if (eq lst nil)
+            (cons val nil)
+            (cons (car lst) (list-push (cdr lst) val)))))
+
+; 4. Pop the last item from the back of the list
+(define list-pop 
+    (lambda (lst)
+        (if (eq (cdr lst) nil)
+            nil
+            (cons (car lst) (list-pop (cdr lst))))))
+
+; 5. Insert an item at a specific index n
+(define list-push-at 
+    (lambda (lst n val)
+        (if (= n 0)
+            (cons val lst)
+            (cons (car lst) (list-push-at (cdr lst) (- n 1) val)))))
+
+; 6. Remove an item at a specific index n
+(define list-pop-at 
+    (lambda (lst n)
+        (if (= n 0)
+            (cdr lst)
+            (cons (car lst) (list-pop-at (cdr lst) (- n 1))))))
+
+#| =====================================================================
+   Execution & Test Suite Demonstration
+   ===================================================================== |#
+
+(define setup 
+    (lambda ()
+        (begin
+            (print "--- Starting List System Tests (Lambda Syntax) ---")
+            
+            (define my-list (list 10 20 30))
+            (print "Initial List:" my-list)
+            
+            (print "Get item at index 1 (expect 20):" (list-get my-list 1))
+            
+            (set! my-list (list-set my-list 1 99))
+            (print "After set! index 1 to 99:" my-list)
+            
+            (set! my-list (list-push my-list 40))
+            (print "After push 40:" my-list)
+            
+            (set! my-list (list-pop my-list))
+            (print "After pop:" my-list)
+            
+            (set! my-list (list-push-at my-list 1 55))
+            (print "After push-at index 1 value 55:" my-list)
+            
+            (set! my-list (list-pop-at my-list 2))
+            (print "After pop-at index 2:" my-list)
+            
+            (print "--- All Tests Completed Successfully ---"))))
+
+(define update 
+    (lambda (dt)
+        (begin
+            (cls 0)
+            (rect 10 10 108 108 12))))

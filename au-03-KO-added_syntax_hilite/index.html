@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Au Script Lisp Environment</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+    <div class="main-layout">
+        <!-- Editor Section -->
+        <div class="editor-pane">
+            <div class="editor-container" style="height: 350px;">
+                <div id="editor-backdrop" aria-hidden="true"></div>
+                <textarea id="code-input" spellcheck="false" placeholder="Write your Au/Lisp script here..."></textarea>
+            </div>
+            <div class="toolbar">
+                <button onclick="runLisp()">Run Script</button>
+                <button onclick="clearCanvasBtn()">Clear Canvas</button>
+                <button onclick="stopLoop()">Stop Loop</button>
+            </div>
+            <pre id="output"></pre>
+        </div>
+
+        <!-- Canvas Section -->
+        <div class="canvas-pane">
+            <canvas id="vmCanvas" width="128" height="128" tabindex="0"></canvas>
+        </div>
+    </div>
+
+    <script src="script.js"></script>
+</body>
+</html>
