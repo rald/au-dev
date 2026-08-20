@@ -1,0 +1,156 @@
+:root {
+    --bg-color: #121214;
+    --panel-bg: #1e1e24;
+    --accent: #b13e53;
+    --accent-hover: #ef7d57;
+    --text: #f4f4f4;
+    --text-dim: #94b0c2;
+    --border: #333c57;
+}
+
+* {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+}
+
+body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    background-color: var(--bg-color);
+    color: var(--text);
+    display: flex;
+    flex-direction: column;
+    height: 100vh;
+    overflow: hidden;
+}
+
+header {
+    background-color: var(--panel-bg);
+    border-bottom: 1px solid var(--border);
+    padding: 0.75rem 1.5rem;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-shrink: 0;
+}
+
+header h1 {
+    font-size: 1.25rem;
+    font-weight: 600;
+    letter-spacing: 0.05em;
+    color: #ffcd75;
+}
+
+.main-container {
+    display: flex;
+    flex: 1;
+    gap: 1rem;
+    padding: 1rem;
+    overflow: hidden;
+    min-height: 0;
+}
+
+.panel {
+    background-color: var(--panel-bg);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+
+.left-panel {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+}
+
+.right-panel {
+    width: 420px;
+    padding: 1rem;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    overflow-y: auto;
+}
+
+.toolbar {
+    padding: 0.75rem 1rem;
+    background-color: rgba(0, 0, 0, 0.2);
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    gap: 0.5rem;
+    flex-shrink: 0;
+}
+
+button {
+    background-color: var(--accent);
+    color: white;
+    border: none;
+    padding: 0.5rem 1.5rem;
+    font-weight: 500;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: background-color 0.2s;
+}
+
+button:hover {
+    background-color: var(--accent-hover);
+}
+
+textarea {
+    flex: 1;
+    background-color: #1a1c2c;
+    color: #f4f4f4;
+    border: none;
+    padding: 1rem;
+    font-family: 'Courier New', Courier, monospace;
+    font-size: 0.95rem;
+    resize: none;
+    line-height: 1.5;
+}
+
+textarea:focus {
+    outline: none;
+}
+
+.output-box {
+    height: 120px;
+    background-color: #1a1c2c;
+    border-top: 1px solid var(--border);
+    padding: 0.75rem 1rem;
+    font-family: 'Courier New', Courier, monospace;
+    font-size: 0.85rem;
+    color: var(--text-dim);
+    overflow-y: auto;
+    white-space: pre-wrap;
+    flex-shrink: 0;
+}
+
+.canvas-wrapper {
+    background-color: #1a1c2c;
+    border: 4px solid var(--border);
+    border-radius: 4px;
+    overflow: hidden;
+    box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.5);
+    max-width: 100%;
+    position: relative;
+}
+
+canvas {
+    display: block;
+    width: 384px;
+    height: 384px;
+    image-rendering: pixelated;
+    image-rendering: crisp-edges;
+    cursor: crosshair;
+    outline: none;
+}
+
+.canvas-label {
+    margin-top: 0.75rem;
+    font-size: 0.85rem;
+    color: var(--text-dim);
+    text-align: center;
+}
