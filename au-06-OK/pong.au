@@ -1,0 +1,79 @@
+;;; Project AU-LISP - Retro Bouncing Ball Demo
+;;; Use Left and Right Arrow keys to control the paddle
+
+(define px 50)
+(define py 115)
+(define pw 28)
+(define ph 4)
+
+(define bx 64)
+(define by 40)
+(define bvx 1.5)
+(define bvy -1.5)
+(define score 0)
+
+(define setup (lambda ()
+    (begin
+        (cls 0)
+        (print "Game Started! Use Left/Right arrows.")
+    )
+))
+
+(define update (lambda (dt)
+    (begin
+        ;; Clear screen with color 0 (dark background)
+        (cls 0)
+        
+        ;; Handle input for paddle movement
+        (if (key? "arrowleft")
+            (if (> px 2) (set! px (- px 3)) nil)
+            nil)
+            
+        (if (key? "arrowright")
+            (if (< px (- 128 pw 2)) (set! px (+ px 3)) nil)
+            nil)
+            
+        ;; Move ball
+        (set! bx (+ bx bvx))
+        (set! by (+ by bvy))
+        
+        ;; Wall collisions (Left/Right)
+        (if (< bx 2) (begin (set! bx 2) (set! bvx (* bvx -1))) nil)
+        (if (> bx 125) (begin (set! bx 125) (set! bvx (* bvx -1))) nil)
+        
+        ;; Wall collision (Top)
+        (if (< by 2) (begin (set! by 2) (set! bvy (* bvy -1))) nil)
+        
+        ;; Paddle collision
+        (if (and (>= by (- py 2)) (<= by py))
+            (if (and (>= (+ bx 2) px) (<= bx (+ px pw)))
+                (begin
+                    (set! by (- py 2))
+                    (set! bvy (* bvy -1))
+                    (set! score (+ score 1))
+                )
+                nil)
+            nil)
+            
+        ;; Reset if ball falls below screen
+        (if (> by 130)
+            (begin
+                (print "Game Over! Final Score:" score)
+                (set! bx 64)
+                (set! by 40)
+                (set! score 0)
+            )
+            nil)
+            
+        ;; Draw Graphics
+        ;; Draw Paddle (Color 10 - Light Blue)
+        (frect px py pw ph 10)
+        
+        ;; Draw Ball (Color 4 - Yellow/Orange)
+        (fcirc bx by 2 4)
+        ;; Draw boundaries/decorations using lines (Color 14 - Gray)
+        (line 0 0 127 0 14)
+        (line 0 0 0 127 14)
+        (line 127 0 127 127 14)
+    )
+))

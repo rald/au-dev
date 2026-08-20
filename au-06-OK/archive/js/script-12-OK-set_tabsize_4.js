@@ -4,36 +4,32 @@ const ctx = canvas.getContext('2d');
 const WIDTH = 128;
 const HEIGHT = 128;
 
-// Exported mouse state variables
 let mouseX = WIDTH / 2;
 let mouseY = HEIGHT / 2;
+
 const mouseButtons = {};
 const keys = {};
 
 canvas.addEventListener('click', () => {
     canvas.focus();
-});
-
-canvas.addEventListener('mousemove', e => {
-    const rect = canvas.getBoundingClientRect();
-    const clientX = e.clientX - rect.left;
-    const clientY = e.clientY - rect.top;
-    
-    mouseX = Math.floor((clientX / rect.width) * WIDTH);
-    mouseY = Math.floor((clientY / rect.height) * HEIGHT);
-    
-    mouseX = Math.max(0, Math.min(WIDTH - 1, mouseX));
-    mouseY = Math.max(0, Math.min(HEIGHT - 1, mouseY));
-});
-
-window.addEventListener('mousedown', e => {
-    if (e.target === canvas) {
-        mouseButtons[e.button] = true;
+    if (canvas.requestPointerLock) {
+        canvas.requestPointerLock();
     }
 });
 
-window.addEventListener('mouseup', e => {
-    mouseButtons[e.button] = false;
+document.addEventListener('mousemove', e => {
+    if (document.pointerLockElement === canvas) {
+        mouseX = Math.max(0, Math.min(WIDTH - 1, mouseX + e.movementX * 0.5));
+        mouseY = Math.max(0, Math.min(HEIGHT - 1, mouseY + e.movementY * 0.5));
+    } else {
+        const rect = canvas.getBoundingClientRect();
+        const clientX = e.clientX - rect.left;
+        const clientY = e.clientY - rect.top;
+        if (clientX >= 0 && clientX <= rect.width && clientY >= 0 && clientY <= rect.height) {
+            mouseX = Math.floor(clientX * (WIDTH / rect.width));
+            mouseY = Math.floor(clientY * (HEIGHT / rect.height));
+        }
+    }
 });
 
 // --- Custom Error System ---
@@ -67,82 +63,16 @@ class LispArityError extends LispError {
     }
 }
 
-// --- Textarea Custom Shortcuts (Auto-Indent, Tab/Shift-Tab & Ctrl+L Line/Col Info) ---
+// --- Textarea Custom Shortcuts (Tab (4 spaces) & Ctrl+L Line/Col Info) ---
 const textarea = document.getElementById('code-input');
 textarea.addEventListener('keydown', e => {
-    if (e.key === 'Enter') {
-        e.preventDefault();
-        const start = textarea.selectionStart;
-        const end = textarea.selectionEnd;
-        const val = textarea.value;
-
-        const lineStart = val.lastIndexOf('\n', start - 1) + 1;
-        const currentLineSlice = val.substring(lineStart, start);
-        
-        const match = currentLineSlice.match(/^([ \t]*)/);
-        let indent = match ? match[1] : '';
-
-        const trimmedBeforeCursor = currentLineSlice.trimEnd();
-        if (trimmedBeforeCursor.endsWith('(')) {
-            indent += '    ';
-        }
-
-        const replacement = '\n' + indent;
-        textarea.value = val.substring(0, start) + replacement + val.substring(end);
-        textarea.selectionStart = textarea.selectionEnd = start + replacement.length;
-    }
-
     if (e.key === 'Tab') {
         e.preventDefault();
         const start = textarea.selectionStart;
         const end = textarea.selectionEnd;
-        const val = textarea.value;
-
-        if (start !== end) {
-            const firstLineStart = val.lastIndexOf('\n', start - 1) + 1;
-            let lastLineEnd = val.indexOf('\n', end);
-            if (lastLineEnd === -1) lastLineEnd = val.length;
-
-            const selectedBlock = val.substring(firstLineStart, lastLineEnd);
-            const lines = selectedBlock.split('\n');
-
-            let modifiedLines;
-            let totalShift = 0;
-
-            if (e.shiftKey) {
-                modifiedLines = lines.map(line => {
-                    const match = line.match(/^( {1,4})/);
-                    if (match) {
-                        totalShift += match[1].length;
-                        return line.substring(match[1].length);
-                    }
-                    return line;
-                });
-                textarea.value = val.substring(0, firstLineStart) + modifiedLines.join('\n') + val.substring(lastLineEnd);
-                textarea.selectionStart = start - (start > firstLineStart ? Math.min(4, start - firstLineStart) : 0);
-                textarea.selectionEnd = Math.max(textarea.selectionStart, end - totalShift);
-            } else {
-                modifiedLines = lines.map(line => '    ' + line);
-                totalShift = lines.length * 4;
-                textarea.value = val.substring(0, firstLineStart) + modifiedLines.join('\n') + val.substring(lastLineEnd);
-                textarea.selectionStart = start + 4;
-                textarea.selectionEnd = end + totalShift;
-            }
-        } else {
-            if (e.shiftKey) {
-                const lineStart = val.lastIndexOf('\n', start - 1) + 1;
-                const lineSlice = val.substring(lineStart, start);
-                const match = lineSlice.match(/^( {1,4})/);
-                if (match) {
-                    const spacesToRemove = match[1].length;
-                    textarea.value = val.substring(0, lineStart) + val.substring(lineStart + spacesToRemove);
-                    textarea.selectionStart = textarea.selectionEnd = Math.max(lineStart, start - spacesToRemove);
-                }
-            } else {
-                textarea.value = val.substring(0, start) + '    ' + val.substring(end);
-                textarea.selectionStart = textarea.selectionEnd = start + 4;
-            }
-        }
+        
+        textarea.value = textarea.value.substring(0, start) + '    ' + textarea.value.substring(end);
+        textarea.selectionStart = textarea.selectionEnd = start + 4;
     }
 
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'l') {
@@ -189,6 +119,16 @@ window.addEventListener('keyup', e => {
     if (e.target.tagName === 'TEXTAREA' || e.target.tagName === 'INPUT') return;
     keys[e.key.toLowerCase()] = false;
     keys[e.code] = false;
+});
+
+window.addEventListener('mousedown', e => {
+    if (document.pointerLockElement === canvas || e.target === canvas) {
+        mouseButtons[e.button] = true;
+    }
+});
+
+window.addEventListener('mouseup', e => {
+    mouseButtons[e.button] = false;
 });
 
 function rgbToHex(r, g, b) {
@@ -323,32 +263,6 @@ function drawFilledCircle(xc, yc, r, colorIndex) {
     }
 }
 
-function drawText(textStr, x, y, colorIndex) {
-    const startX = Math.floor(x);
-    let cursorX = startX;
-    let cursorY = Math.floor(y);
-    
-    for (let i = 0; i < textStr.length; i++) {
-        const code = textStr.charCodeAt(i);
-        if (code === 10) {
-            cursorX = startX;
-            cursorY += 8;
-            continue;
-        }
-        
-        const glyph = (code >= 0 && code < DOS_FONT_8X8.length) ? DOS_FONT_8X8[code] : DOS_FONT_8X8[32];
-        for (let row = 0; row < 8; row++) {
-            const rowBits = glyph[row];
-            for (let col = 0; col < 8; col++) {
-                if ((rowBits & (1 << (7 - col))) !== 0) {
-                    setPixel(cursorX + col, cursorY + row, colorIndex);
-                }
-            }
-        }
-        cursorX += 8;
-    }
-}
-
 function getPixel(x, y) {
     const xi = Math.floor(x);
     const yi = Math.floor(y);
@@ -392,6 +306,7 @@ function tokenize(input) {
             continue;
         }
 
+        // Multi-line comments: #| ... |#
         if (char === '#' && i + 1 < input.length && input[i + 1] === '|') {
             i += 2;
             col += 2;
@@ -412,6 +327,7 @@ function tokenize(input) {
             continue;
         }
 
+        // Single-line comments: ; or #
         if (char === ';' || char === '#') {
             while (i < input.length && input[i] !== '\n') {
                 i++;
@@ -419,6 +335,7 @@ function tokenize(input) {
             continue;
         }
 
+        // String literals with escape sequence support
         if (char === '"') {
             const startLine = line;
             const startCol = col;
@@ -443,11 +360,12 @@ function tokenize(input) {
                 }
                 i++;
             }
-            if (i < input.length) { i++; col++; }
+            if (i < input.length) { i++; col++; } // skip closing quote
             tokens.push({ type: 'ATOM', value: `__STR__${btoa(strVal)}`, line: startLine, col: startCol });
             continue;
         }
 
+        // Quotes, Parentheses
         if (char === '\'' || char === '(' || char === ')') {
             tokens.push({ type: char, value: char, line, col });
             col++;
@@ -455,6 +373,7 @@ function tokenize(input) {
             continue;
         }
 
+        // Regular tokens/atoms
         const startLine = line;
         const startCol = col;
         let atomVal = '';
@@ -472,6 +391,7 @@ function parse(tokens) {
     if (tokens.length === 0) throw new LispSyntaxError('Unexpected EOF while reading', 1, 1);
     const token = tokens.shift();
     
+    // Support quote shorthand 'expr or '(list)
     if (token.value === "'") {
         return ['quote', parse(tokens)];
     }
@@ -486,7 +406,7 @@ function parse(tokens) {
         if (tokens.length === 0) {
             throw new LispSyntaxError('Missing closing parenthesis', startLine, startCol);
         }
-        tokens.shift();
+        tokens.shift(); // remove ')'
         list.line = startLine;
         list.col = startCol;
         return list;
@@ -541,9 +461,6 @@ function evaluate(exp, env) {
     if (typeof exp === 'string') {
         if (env) {
             try {
-                // Dynamic getter evaluation for live mouse variables
-                if (exp === 'mouse-x') return mouseX;
-                if (exp === 'mouse-y') return mouseY;
                 return env.find(exp, line, col).bindings[exp];
             } catch (e) {
                 return exp;
@@ -674,12 +591,12 @@ function runLisp() {
         'frect': (x, y, w, h, c) => { drawFilledRect(x, y, w, h, c); return c; },
         'circ': (x, y, r, c) => { drawCircle(x, y, r, c); return c; },
         'fcirc': (x, y, r, c) => { drawFilledCircle(x, y, r, c); return c; },
-        'text': (str, x, y, c) => { drawText(String(str), x, y, c); return c; },
         'pget': (x, y) => getPixel(x, y),
         'rand': n => Math.floor(Math.random() * n),
         'time': () => Date.now(),
         'clock': () => performance.now(),
-        // mouse-btn supports concurrent checking by button index (e.g., (mouse-btn 0) for left, (mouse-btn 2) for right)
+        'mouse-x': () => mouseX,
+        'mouse-y': () => mouseY,
         'mouse-btn': (buttonIndex = 0) => !!mouseButtons[buttonIndex],
         'key?': k => !!keys[k.toLowerCase()] || !!keys[k]
     });
@@ -730,6 +647,9 @@ function stopLoop() {
         cancelAnimationFrame(animationFrameId);
         animationFrameId = null;
         logToConsole("Animation loop stopped.");
+    }
+    if (document.exitPointerLock) {
+        document.exitPointerLock();
     }
 }
 

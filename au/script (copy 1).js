@@ -4,36 +4,32 @@ const ctx = canvas.getContext('2d');
 const WIDTH = 128;
 const HEIGHT = 128;
 
-// Exported mouse state variables
 let mouseX = WIDTH / 2;
 let mouseY = HEIGHT / 2;
+
 const mouseButtons = {};
 const keys = {};
 
 canvas.addEventListener('click', () => {
     canvas.focus();
-});
-
-canvas.addEventListener('mousemove', e => {
-    const rect = canvas.getBoundingClientRect();
-    const clientX = e.clientX - rect.left;
-    const clientY = e.clientY - rect.top;
-    
-    mouseX = Math.floor((clientX / rect.width) * WIDTH);
-    mouseY = Math.floor((clientY / rect.height) * HEIGHT);
-    
-    mouseX = Math.max(0, Math.min(WIDTH - 1, mouseX));
-    mouseY = Math.max(0, Math.min(HEIGHT - 1, mouseY));
-});
-
-window.addEventListener('mousedown', e => {
-    if (e.target === canvas) {
-        mouseButtons[e.button] = true;
+    if (canvas.requestPointerLock) {
+        canvas.requestPointerLock();
     }
 });
 
-window.addEventListener('mouseup', e => {
-    mouseButtons[e.button] = false;
+document.addEventListener('mousemove', e => {
+    if (document.pointerLockElement === canvas) {
+        mouseX = Math.max(0, Math.min(WIDTH - 1, mouseX + e.movementX * 0.5));
+        mouseY = Math.max(0, Math.min(HEIGHT - 1, mouseY + e.movementY * 0.5));
+    } else {
+        const rect = canvas.getBoundingClientRect();
+        const clientX = e.clientX - rect.left;
+        const clientY = e.clientY - rect.top;
+        if (clientX >= 0 && clientX <= rect.width && clientY >= 0 && clientY <= rect.height) {
+            mouseX = Math.floor(clientX * (WIDTH / rect.width));
+            mouseY = Math.floor(clientY * (HEIGHT / rect.height));
+        }
+    }
 });
 
 // --- Custom Error System ---
@@ -189,6 +185,16 @@ window.addEventListener('keyup', e => {
     if (e.target.tagName === 'TEXTAREA' || e.target.tagName === 'INPUT') return;
     keys[e.key.toLowerCase()] = false;
     keys[e.code] = false;
+});
+
+window.addEventListener('mousedown', e => {
+    if (document.pointerLockElement === canvas || e.target === canvas) {
+        mouseButtons[e.button] = true;
+    }
+});
+
+window.addEventListener('mouseup', e => {
+    mouseButtons[e.button] = false;
 });
 
 function rgbToHex(r, g, b) {
@@ -541,9 +547,6 @@ function evaluate(exp, env) {
     if (typeof exp === 'string') {
         if (env) {
             try {
-                // Dynamic getter evaluation for live mouse variables
-                if (exp === 'mouse-x') return mouseX;
-                if (exp === 'mouse-y') return mouseY;
                 return env.find(exp, line, col).bindings[exp];
             } catch (e) {
                 return exp;
@@ -679,7 +682,8 @@ function runLisp() {
         'rand': n => Math.floor(Math.random() * n),
         'time': () => Date.now(),
         'clock': () => performance.now(),
-        // mouse-btn supports concurrent checking by button index (e.g., (mouse-btn 0) for left, (mouse-btn 2) for right)
+        'mouse-x': () => mouseX,
+        'mouse-y': () => mouseY,
         'mouse-btn': (buttonIndex = 0) => !!mouseButtons[buttonIndex],
         'key?': k => !!keys[k.toLowerCase()] || !!keys[k]
     });
@@ -730,6 +734,9 @@ function stopLoop() {
         cancelAnimationFrame(animationFrameId);
         animationFrameId = null;
         logToConsole("Animation loop stopped.");
+    }
+    if (document.exitPointerLock) {
+        document.exitPointerLock();
     }
 }
 

@@ -4,145 +4,44 @@ const ctx = canvas.getContext('2d');
 const WIDTH = 128;
 const HEIGHT = 128;
 
-// Exported mouse state variables
 let mouseX = WIDTH / 2;
 let mouseY = HEIGHT / 2;
+
 const mouseButtons = {};
 const keys = {};
 
 canvas.addEventListener('click', () => {
     canvas.focus();
-});
-
-canvas.addEventListener('mousemove', e => {
-    const rect = canvas.getBoundingClientRect();
-    const clientX = e.clientX - rect.left;
-    const clientY = e.clientY - rect.top;
-    
-    mouseX = Math.floor((clientX / rect.width) * WIDTH);
-    mouseY = Math.floor((clientY / rect.height) * HEIGHT);
-    
-    mouseX = Math.max(0, Math.min(WIDTH - 1, mouseX));
-    mouseY = Math.max(0, Math.min(HEIGHT - 1, mouseY));
-});
-
-window.addEventListener('mousedown', e => {
-    if (e.target === canvas) {
-        mouseButtons[e.button] = true;
+    if (canvas.requestPointerLock) {
+        canvas.requestPointerLock();
     }
 });
 
-window.addEventListener('mouseup', e => {
-    mouseButtons[e.button] = false;
+document.addEventListener('mousemove', e => {
+    if (document.pointerLockElement === canvas) {
+        mouseX = Math.max(0, Math.min(WIDTH - 1, mouseX + e.movementX * 0.5));
+        mouseY = Math.max(0, Math.min(HEIGHT - 1, mouseY + e.movementY * 0.5));
+    } else {
+        const rect = canvas.getBoundingClientRect();
+        const clientX = e.clientX - rect.left;
+        const clientY = e.clientY - rect.top;
+        if (clientX >= 0 && clientX <= rect.width && clientY >= 0 && clientY <= rect.height) {
+            mouseX = Math.floor(clientX * (WIDTH / rect.width));
+            mouseY = Math.floor(clientY * (HEIGHT / rect.height));
+        }
+    }
 });
 
-// --- Custom Error System ---
-class LispError extends Error {
-    constructor(message, line = 1, col = 1, type = 'Error') {
-        super(message);
-        this.name = type;
-        this.line = line;
-        this.col = col;
-    }
-    toString() {
-        return `[${this.name}] Line ${this.line}, Col ${this.col}: ${this.message}`;
-    }
-}
-
-class LispSyntaxError extends LispError {
-    constructor(message, line, col) {
-        super(message, line, col, 'SyntaxError');
-    }
-}
-
-class LispRuntimeError extends LispError {
-    constructor(message, line, col) {
-        super(message, line, col, 'RuntimeError');
-    }
-}
-
-class LispArityError extends LispError {
-    constructor(message, line, col) {
-        super(message, line, col, 'ArityError');
-    }
-}
-
-// --- Textarea Custom Shortcuts (Auto-Indent, Tab/Shift-Tab & Ctrl+L Line/Col Info) ---
+// --- Textarea Custom Shortcuts (Tab & Ctrl+L Line/Col Info) ---
 const textarea = document.getElementById('code-input');
 textarea.addEventListener('keydown', e => {
-    if (e.key === 'Enter') {
-        e.preventDefault();
-        const start = textarea.selectionStart;
-        const end = textarea.selectionEnd;
-        const val = textarea.value;
-
-        const lineStart = val.lastIndexOf('\n', start - 1) + 1;
-        const currentLineSlice = val.substring(lineStart, start);
-        
-        const match = currentLineSlice.match(/^([ \t]*)/);
-        let indent = match ? match[1] : '';
-
-        const trimmedBeforeCursor = currentLineSlice.trimEnd();
-        if (trimmedBeforeCursor.endsWith('(')) {
-            indent += '    ';
-        }
-
-        const replacement = '\n' + indent;
-        textarea.value = val.substring(0, start) + replacement + val.substring(end);
-        textarea.selectionStart = textarea.selectionEnd = start + replacement.length;
-    }
-
     if (e.key === 'Tab') {
         e.preventDefault();
         const start = textarea.selectionStart;
         const end = textarea.selectionEnd;
-        const val = textarea.value;
-
-        if (start !== end) {
-            const firstLineStart = val.lastIndexOf('\n', start - 1) + 1;
-            let lastLineEnd = val.indexOf('\n', end);
-            if (lastLineEnd === -1) lastLineEnd = val.length;
-
-            const selectedBlock = val.substring(firstLineStart, lastLineEnd);
-            const lines = selectedBlock.split('\n');
-
-            let modifiedLines;
-            let totalShift = 0;
-
-            if (e.shiftKey) {
-                modifiedLines = lines.map(line => {
-                    const match = line.match(/^( {1,4})/);
-                    if (match) {
-                        totalShift += match[1].length;
-                        return line.substring(match[1].length);
-                    }
-                    return line;
-                });
-                textarea.value = val.substring(0, firstLineStart) + modifiedLines.join('\n') + val.substring(lastLineEnd);
-                textarea.selectionStart = start - (start > firstLineStart ? Math.min(4, start - firstLineStart) : 0);
-                textarea.selectionEnd = Math.max(textarea.selectionStart, end - totalShift);
-            } else {
-                modifiedLines = lines.map(line => '    ' + line);
-                totalShift = lines.length * 4;
-                textarea.value = val.substring(0, firstLineStart) + modifiedLines.join('\n') + val.substring(lastLineEnd);
-                textarea.selectionStart = start + 4;
-                textarea.selectionEnd = end + totalShift;
-            }
-        } else {
-            if (e.shiftKey) {
-                const lineStart = val.lastIndexOf('\n', start - 1) + 1;
-                const lineSlice = val.substring(lineStart, start);
-                const match = lineSlice.match(/^( {1,4})/);
-                if (match) {
-                    const spacesToRemove = match[1].length;
-                    textarea.value = val.substring(0, lineStart) + val.substring(lineStart + spacesToRemove);
-                    textarea.selectionStart = textarea.selectionEnd = Math.max(lineStart, start - spacesToRemove);
-                }
-            } else {
-                textarea.value = val.substring(0, start) + '    ' + val.substring(end);
-                textarea.selectionStart = textarea.selectionEnd = start + 4;
-            }
-        }
+        
+        textarea.value = textarea.value.substring(0, start) + '  ' + textarea.value.substring(end);
+        textarea.selectionStart = textarea.selectionEnd = start + 2;
     }
 
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'l') {
@@ -189,6 +88,16 @@ window.addEventListener('keyup', e => {
     if (e.target.tagName === 'TEXTAREA' || e.target.tagName === 'INPUT') return;
     keys[e.key.toLowerCase()] = false;
     keys[e.code] = false;
+});
+
+window.addEventListener('mousedown', e => {
+    if (document.pointerLockElement === canvas || e.target === canvas) {
+        mouseButtons[e.button] = true;
+    }
+});
+
+window.addEventListener('mouseup', e => {
+    mouseButtons[e.button] = false;
 });
 
 function rgbToHex(r, g, b) {
@@ -323,32 +232,6 @@ function drawFilledCircle(xc, yc, r, colorIndex) {
     }
 }
 
-function drawText(textStr, x, y, colorIndex) {
-    const startX = Math.floor(x);
-    let cursorX = startX;
-    let cursorY = Math.floor(y);
-    
-    for (let i = 0; i < textStr.length; i++) {
-        const code = textStr.charCodeAt(i);
-        if (code === 10) {
-            cursorX = startX;
-            cursorY += 8;
-            continue;
-        }
-        
-        const glyph = (code >= 0 && code < DOS_FONT_8X8.length) ? DOS_FONT_8X8[code] : DOS_FONT_8X8[32];
-        for (let row = 0; row < 8; row++) {
-            const rowBits = glyph[row];
-            for (let col = 0; col < 8; col++) {
-                if ((rowBits & (1 << (7 - col))) !== 0) {
-                    setPixel(cursorX + col, cursorY + row, colorIndex);
-                }
-            }
-        }
-        cursorX += 8;
-    }
-}
-
 function getPixel(x, y) {
     const xi = Math.floor(x);
     const yi = Math.floor(y);
@@ -392,6 +275,7 @@ function tokenize(input) {
             continue;
         }
 
+        // Multi-line comments: #| ... |#
         if (char === '#' && i + 1 < input.length && input[i + 1] === '|') {
             i += 2;
             col += 2;
@@ -412,6 +296,7 @@ function tokenize(input) {
             continue;
         }
 
+        // Single-line comments: ; or #
         if (char === ';' || char === '#') {
             while (i < input.length && input[i] !== '\n') {
                 i++;
@@ -419,46 +304,37 @@ function tokenize(input) {
             continue;
         }
 
+        // String literals
         if (char === '"') {
             const startLine = line;
             const startCol = col;
             i++;
             col++;
             let strVal = '';
-            
             while (i < input.length && input[i] !== '"') {
-                if (input[i] === '\\' && i + 1 < input.length) {
-                    i++;
-                    col++;
-                    const nextChar = input[i];
-                    if (nextChar === 'n') strVal += '\n';
-                    else if (nextChar === 't') strVal += '\t';
-                    else if (nextChar === '"') strVal += '"';
-                    else if (nextChar === '\\') strVal += '\\';
-                    else strVal += nextChar;
-                } else {
-                    if (input[i] === '\n') { line++; col = 1; }
-                    else { col++; }
-                    strVal += input[i];
-                }
+                if (input[i] === '\n') { line++; col = 1; }
+                else { col++; }
+                strVal += input[i];
                 i++;
             }
-            if (i < input.length) { i++; col++; }
+            if (i < input.length) { i++; col++; } // skip closing quote
             tokens.push({ type: 'ATOM', value: `__STR__${btoa(strVal)}`, line: startLine, col: startCol });
             continue;
         }
 
-        if (char === '\'' || char === '(' || char === ')') {
+        // Parentheses
+        if (char === '(' || char === ')') {
             tokens.push({ type: char, value: char, line, col });
             col++;
             i++;
             continue;
         }
 
+        // Regular tokens/atoms
         const startLine = line;
         const startCol = col;
         let atomVal = '';
-        while (i < input.length && !/\s/.test(input[i]) && input[i] !== '(' && input[i] !== ')' && input[i] !== '\'') {
+        while (i < input.length && !/\s/.test(input[i]) && input[i] !== '(' && input[i] !== ')') {
             atomVal += input[i];
             col++;
             i++;
@@ -469,29 +345,21 @@ function tokenize(input) {
 }
 
 function parse(tokens) {
-    if (tokens.length === 0) throw new LispSyntaxError('Unexpected EOF while reading', 1, 1);
+    if (tokens.length === 0) throw new Error('1:1: Unexpected EOF while reading');
     const token = tokens.shift();
     
-    if (token.value === "'") {
-        return ['quote', parse(tokens)];
-    }
-
     if (token.value === '(') {
-        const startLine = token.line;
-        const startCol = token.col;
         const list = [];
         while (tokens.length > 0 && tokens[0].value !== ')') {
             list.push(parse(tokens));
         }
         if (tokens.length === 0) {
-            throw new LispSyntaxError('Missing closing parenthesis', startLine, startCol);
+            throw new Error(`${token.line}:${token.col}: Missing closing parenthesis`);
         }
-        tokens.shift();
-        list.line = startLine;
-        list.col = startCol;
+        tokens.shift(); // remove ')'
         return list;
     } else if (token.value === ')') {
-        throw new LispSyntaxError('Unexpected closing parenthesis', token.line, token.col);
+        throw new Error(`${token.line}:${token.col}: Unexpected closing parenthesis`);
     } else {
         return parseAtom(token);
     }
@@ -502,9 +370,10 @@ function parseAtom(token) {
     if (val.startsWith('__STR__')) {
         return atob(val.slice(7));
     }
-    if (val === "t") return true;
+    if (val === "'t" || val === "t") return true;
     if (val === "nil" || val === "NIL") return [];
     if (!isNaN(Number(val))) return Number(val);
+    if (val.startsWith("'")) return ['quote', parseAtom({ value: val.slice(1), line: token.line, col: token.col + 1 })];
     return val;
 }
 
@@ -513,38 +382,32 @@ class Environment {
         this.bindings = bindings;
         this.outer = outer;
     }
-    find(variable, line = 1, col = 1) {
+    find(variable) {
         if (variable in this.bindings) return this;
-        if (this.outer) return this.outer.find(variable, line, col);
-        throw new LispRuntimeError(`Unbound symbol: ${variable}`, line, col);
+        if (this.outer) return this.outer.find(variable);
+        throw new Error(`Unbound symbol: ${variable}`);
     }
     set(variable, value) {
         this.bindings[variable] = value;
     }
-    update(variable, value, line = 1, col = 1) {
+    update(variable, value) {
         try {
-            const env = this.find(variable, line, col);
+            const env = this.find(variable);
             env.bindings[variable] = value;
             return value;
         } catch (e) {
-            throw new LispRuntimeError(`Cannot set! unbound symbol: ${variable}`, line, col);
+            throw new Error(`Cannot set! unbound symbol: ${variable}`);
         }
     }
 }
 
 function evaluate(exp, env) {
-    const line = exp && exp.line ? exp.line : 1;
-    const col = exp && exp.col ? exp.col : 1;
-
     if (typeof exp === 'number') return exp;
     if (typeof exp === 'boolean') return exp;
     if (typeof exp === 'string') {
         if (env) {
             try {
-                // Dynamic getter evaluation for live mouse variables
-                if (exp === 'mouse-x') return mouseX;
-                if (exp === 'mouse-y') return mouseY;
-                return env.find(exp, line, col).bindings[exp];
+                return env.find(exp).bindings[exp];
             } catch (e) {
                 return exp;
             }
@@ -602,7 +465,7 @@ function evaluate(exp, env) {
     if (head === 'set!') {
         const [, symbol, expr] = exp;
         const val = evaluate(expr, env);
-        return env.update(symbol, val, line, col);
+        return env.update(symbol, val);
     }
     if (head === 'print') {
         const args = exp.slice(1).map(arg => evaluate(arg, env));
@@ -612,9 +475,6 @@ function evaluate(exp, env) {
     if (head === 'lambda') {
         const [, params, body] = exp;
         return (...args) => {
-            if (args.length !== params.length) {
-                throw new LispArityError(`Arity mismatch: expected ${params.length} arguments, but got ${args.length}`, line, col);
-            }
             const localBindings = {};
             for (let i = 0; i < params.length; i++) localBindings[params[i]] = args[i];
             return evaluate(body, new Environment(localBindings, env));
@@ -628,9 +488,7 @@ function evaluate(exp, env) {
 
     const proc = evaluate(head, env);
     const args = exp.slice(1).map(arg => evaluate(arg, env));
-    if (typeof proc !== 'function') {
-        throw new LispRuntimeError(`Not a function: ${head}`, line, col);
-    }
+    if (typeof proc !== 'function') throw new Error(`Not a function: ${head}`);
     return proc(...args);
 }
 
@@ -656,8 +514,6 @@ function runLisp() {
         '/=': (a, b) => a !== b,
         'mod': (a, b) => a % b,
         'abs': a => Math.abs(a),
-        'sgn': a => a < 0 ? -1 : (a > 0 ? 1 : 0),
-        'exit': () => { stopLoop(); return []; },
         'atom': x => !Array.isArray(x),
         'eq': (a, b) => {
             if (Array.isArray(a) && Array.isArray(b)) return a.length === 0 && b.length === 0;
@@ -674,12 +530,12 @@ function runLisp() {
         'frect': (x, y, w, h, c) => { drawFilledRect(x, y, w, h, c); return c; },
         'circ': (x, y, r, c) => { drawCircle(x, y, r, c); return c; },
         'fcirc': (x, y, r, c) => { drawFilledCircle(x, y, r, c); return c; },
-        'text': (str, x, y, c) => { drawText(String(str), x, y, c); return c; },
         'pget': (x, y) => getPixel(x, y),
         'rand': n => Math.floor(Math.random() * n),
         'time': () => Date.now(),
         'clock': () => performance.now(),
-        // mouse-btn supports concurrent checking by button index (e.g., (mouse-btn 0) for left, (mouse-btn 2) for right)
+        'mouse-x': () => mouseX,
+        'mouse-y': () => mouseY,
         'mouse-btn': (buttonIndex = 0) => !!mouseButtons[buttonIndex],
         'key?': k => !!keys[k.toLowerCase()] || !!keys[k]
     });
@@ -707,8 +563,7 @@ function runLisp() {
                         updateFn(dt);
                     } catch (loopErr) {
                         outputEl.style.color = '#b13e53';
-                        const formattedMsg = loopErr instanceof LispError ? loopErr.toString() : loopErr.message;
-                        outputEl.textContent += `\n> Loop Error: ${formattedMsg}`;
+                        outputEl.textContent += `\n> Loop Error: ${loopErr.message}`;
                         stopLoop();
                         return;
                     }
@@ -720,8 +575,7 @@ function runLisp() {
 
     } catch (err) {
         outputEl.style.color = '#b13e53';
-        const formattedMsg = err instanceof LispError ? err.toString() : err.message;
-        outputEl.textContent = `> Error\n${formattedMsg}`;
+        outputEl.textContent = `> Error\n${err.message}`;
     }
 }
 
@@ -730,6 +584,9 @@ function stopLoop() {
         cancelAnimationFrame(animationFrameId);
         animationFrameId = null;
         logToConsole("Animation loop stopped.");
+    }
+    if (document.exitPointerLock) {
+        document.exitPointerLock();
     }
 }
 
