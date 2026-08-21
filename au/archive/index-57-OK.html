@@ -507,59 +507,8 @@
     'LISTP': (x) => Array.isArray(x) ? 'T' : 'NIL',
     'CAR': (x) => x[0],
     'CDR': (x) => x.slice(1),
-    'CONS': (x, y) => [x, ...(Array.isArray(y) && y !== 'NIL' ? y : [y])],
+    'CONS': (x, y) => [x, ...y],
     'LIST': (...args) => args.length === 0 ? 'NIL' : args,
-    
-    // --- ADDED LIST UTILITIES ---
-    'LIST-PUSH': (lst, item) => {
-      const arr = (lst === 'NIL' || !Array.isArray(lst)) ? [] : [...lst];
-      arr.push(item);
-      return arr;
-    },
-    'LIST-POP': (lst) => {
-      if (!Array.isArray(lst) || lst.length === 0 || lst === 'NIL') return 'NIL';
-      const arr = [...lst];
-      arr.pop();
-      return arr.length === 0 ? 'NIL' : arr;
-    },
-    'LIST-PUSH-AT': (lst, index, item) => {
-      const arr = (lst === 'NIL' || !Array.isArray(lst)) ? [] : [...lst];
-      arr.splice(index, 0, item);
-      return arr;
-    },
-    'LIST-POP-AT': (lst, index) => {
-      if (!Array.isArray(lst) || lst === 'NIL') return 'NIL';
-      const arr = [...lst];
-      arr.splice(index, 1);
-      return arr.length === 0 ? 'NIL' : arr;
-    },
-    'LIST-GET': (lst, index) => {
-      if (!Array.isArray(lst) || lst === 'NIL' || index < 0 || index >= lst.length) return 'NIL';
-      return lst[index];
-    },
-    'LIST-SET': (lst, index, item) => {
-      if (!Array.isArray(lst) || lst === 'NIL' || index < 0 || index >= lst.length) return lst;
-      const arr = [...lst];
-      arr[index] = item;
-      return arr;
-    },
-    'LIST-CONTAINS': function deepContains(lst, item) {
-      if (!Array.isArray(lst) || lst === 'NIL') return 'NIL';
-      for (const elem of lst) {
-        if (elem === item) return 'T';
-        if (Array.isArray(elem) && Array.isArray(item)) {
-          if (deepContains(elem, item) === 'T') return 'T';
-        }
-      }
-      return 'NIL';
-    },
-    'LIST-INDEX-OF': (lst, item) => {
-      if (!Array.isArray(lst) || lst === 'NIL') return -1;
-      const idx = lst.findIndex(elem => elem === item);
-      return idx !== -1 ? idx : -1;
-    },
-    // ----------------------------
-
     'APPEND': (...lists) => {
       let result = [];
       for (const lst of lists) {
