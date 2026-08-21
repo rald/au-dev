@@ -381,21 +381,6 @@ const baseEnv = makeEnv({
     const idx = lst.findIndex(elem => elem === item);
     return idx !== -1 ? idx : -1;
   },
-  'LIST-FLATTEN': function deepFlatten(lst) {
-    if (!Array.isArray(lst) || lst === 'NIL') return 'NIL';
-    let result = [];
-    for (const item of lst) {
-      if (Array.isArray(item)) {
-        const flattenedSub = deepFlatten(item);
-        if (flattenedSub !== 'NIL') {
-          result = result.concat(flattenedSub);
-        }
-      } else {
-        result.push(item);
-      }
-    }
-    return result.length === 0 ? 'NIL' : result;
-  },
   // ----------------------------
 
   'APPEND': (...lists) => {

@@ -323,26 +323,15 @@ const baseEnv = makeEnv({
   'LIST': (...args) => args.length === 0 ? 'NIL' : args,
   
   // --- ADDED LIST UTILITIES ---
-  'LIST-PUSH-BACK': (lst, item) => {
+  'LIST-PUSH': (lst, item) => {
     const arr = (lst === 'NIL' || !Array.isArray(lst)) ? [] : [...lst];
     arr.push(item);
     return arr;
   },
-  'LIST-PUSH-FRONT': (lst, item) => {
-    const arr = (lst === 'NIL' || !Array.isArray(lst)) ? [] : [...lst];
-    arr.unshift(item);
-    return arr;
-  },
-  'LIST-POP-BACK': (lst) => {
+  'LIST-POP': (lst) => {
     if (!Array.isArray(lst) || lst.length === 0 || lst === 'NIL') return 'NIL';
     const arr = [...lst];
     arr.pop();
-    return arr.length === 0 ? 'NIL' : arr;
-  },
-  'LIST-POP-FRONT': (lst) => {
-    if (!Array.isArray(lst) || lst.length === 0 || lst === 'NIL') return 'NIL';
-    const arr = [...lst];
-    arr.shift();
     return arr.length === 0 ? 'NIL' : arr;
   },
   'LIST-PUSH-AT': (lst, index, item) => {
@@ -380,21 +369,6 @@ const baseEnv = makeEnv({
     if (!Array.isArray(lst) || lst === 'NIL') return -1;
     const idx = lst.findIndex(elem => elem === item);
     return idx !== -1 ? idx : -1;
-  },
-  'LIST-FLATTEN': function deepFlatten(lst) {
-    if (!Array.isArray(lst) || lst === 'NIL') return 'NIL';
-    let result = [];
-    for (const item of lst) {
-      if (Array.isArray(item)) {
-        const flattenedSub = deepFlatten(item);
-        if (flattenedSub !== 'NIL') {
-          result = result.concat(flattenedSub);
-        }
-      } else {
-        result.push(item);
-      }
-    }
-    return result.length === 0 ? 'NIL' : result;
   },
   // ----------------------------
 
