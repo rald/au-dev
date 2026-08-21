@@ -52,17 +52,20 @@ function drawText(str, x, y, colorStr) {
   for (let i = 0; i < textStr.length; i++) {
     const code = textStr.charCodeAt(i);
     
+    // Handle explicit newlines or automatic wrapping when exceeding canvas width (128px)
     if (code === 10 || cursorX + 8 > CANVAS_WIDTH) {
       cursorX = startX;
       startY += 8;
     }
     
+    // Stop drawing if vertical position goes beyond canvas bounds
     if (startY >= CANVAS_HEIGHT) {
       break;
     }
 
+    // Skip drawing if above canvas
     if (startY + 8 > 0) {
-      const charBitmap = DOS_FONT_8X8[code] || DOS_FONT_8X8[32];
+      const charBitmap = DOS_FONT_8X8[code] || DOS_FONT_8X8[32]; // default to space if out of range
       for (let row = 0; row < 8; row++) {
         const rowByte = charBitmap[row];
         for (let col = 0; col < 8; col++) {
@@ -338,19 +341,6 @@ const baseEnv = makeEnv({
   'CONS': (x, y) => [x, ...(Array.isArray(y) && y !== 'NIL' ? y : [y])],
   'LIST': (...args) => args.length === 0 ? 'NIL' : args,
   
-  'LEN': (x) => {
-    if (x === 'NIL' || x === null || (Array.isArray(x) && x.length === 0)) return 0;
-    if (Array.isArray(x)) return x.length;
-    if (typeof x === 'string') {
-      let str = x;
-      if (str.startsWith('"') && str.endsWith('"')) {
-        str = str.slice(1, -1);
-      }
-      return unescapeString(str).length;
-    }
-    return 0;
-  },
-
   'LIST-PUSH-BACK': (lst, item) => {
     const arr = (lst === 'NIL' || !Array.isArray(lst)) ? [] : [...lst];
     arr.push(item);
@@ -446,10 +436,6 @@ const baseEnv = makeEnv({
     return 'NIL';
   },
   'ERROR': (msg) => { throw new LispRuntimeError(msg); },
-  'CLEAR-LOG': () => {
-    console.clear();
-    return 'T';
-  },
   'PRINT': (...args) => {
     const formatted = args.map(arg => {
       let str = lispToString(arg);
@@ -494,10 +480,10 @@ function callClosure(fnVal, evaluatedArgs, line, col) {
       return new TailCall(() => evaluate(body, callEnv));
     }
     if (fnVal[0] === 'LABEL') {
-      const [, closureEnv, name, lambdaExpr] = fnVal;
+      const [, name, lambdaExpr] = fnVal;
       const recursiveBindings = {};
       recursiveBindings[name] = fnVal;
-      const recursiveEnv = makeEnv(recursiveBindings, closureEnv);
+      const recursiveEnv = makeEnv(recursiveBindings, fnVal[1] || baseEnv);
       if (lambdaExpr[0] === 'LAMBDA') {
         const [, params, body] = lambdaExpr;
         const callBindings = {};
@@ -560,9 +546,7 @@ function evaluate(expr, env) {
       return lastRes;
     }
 
-    if (op === 'LABEL') {
-      return ['LABEL', env, args[0], args[1]];
-    }
+    if (op === 'LABEL') return expr;
     if (op === 'LAMBDA') return ['CLOSURE', env, args[0], args[1]];
     if (op === 'BEGIN') {
       let lastResult = 'NIL';
@@ -626,8 +610,10 @@ function expandMacros(expr) {
 }
 
 function parseAllLispExpressions(text) {
+  // 1. Remove multi-line comments: #| ... |#
   let cleanText = text.replace(/#\|[\s\S]*?\|#/g, '');
   
+  // 2. Remove single-line comments starting with # or ;
   const lines = cleanText.split('\n');
   const processedLines = lines.map(line => {
     let commentIdx = -1;
@@ -718,11 +704,6 @@ function parseAllLispExpressions(text) {
 
 const codeInput = document.getElementById('codeInput');
 
-// Explicitly ensure textarea grabs focus when clicked
-codeInput.addEventListener('click', function() {
-  codeInput.focus();
-});
-
 codeInput.addEventListener('keydown', function(e) {
   if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'l') {
     e.preventDefault();
@@ -761,45 +742,38 @@ codeInput.addEventListener('keydown', function(e) {
     const start = codeInput.selectionStart;
     const end = codeInput.selectionEnd;
     const val = codeInput.value;
+    const firstLineStart = val.lastIndexOf('\n', start - 1) + 1;
+    let effectiveEnd = end;
+    if (end > start && val.charAt(end - 1) === '\n') {
+      effectiveEnd = end - 1;
+    }
+    let lastLineEnd = val.indexOf('\n', effectiveEnd);
+    if (lastLineEnd === -1) lastLineEnd = val.length;
+    
+    const selectedBlock = val.substring(firstLineStart, lastLineEnd);
+    const lines = selectedBlock.split('\n');
+    const isMultiLine = lines.length > 1;
 
-    const lineStart = val.lastIndexOf('\n', start - 1) + 1;
-    let lineEnd = val.indexOf('\n', end - 1);
-    if (lineEnd === -1) lineEnd = val.length;
-
-    const selectedText = val.substring(lineStart, lineEnd);
-
-    if (e.shiftKey) {
-      const lines = selectedText.split('\n');
-      let totalRemoved = 0;
-      const updatedLines = lines.map((line, idx) => {
-        const match = line.match(/^( {1,2})/);
-        if (match) {
-          const removed = match[1].length;
-          if (idx === 0) totalRemoved = removed;
-          return line.substring(removed);
-        }
+    const processedLines = lines.map(line => {
+      if (e.shiftKey) {
+        if (line.startsWith('  ')) return line.substring(2);
+        if (line.startsWith(' ')) return line.substring(1);
         return line;
-      });
-
-      const updatedText = updatedLines.join('\n');
-      codeInput.value = val.substring(0, lineStart) + updatedText + val.substring(lineEnd);
-      
-      const newStart = Math.max(lineStart, start - totalRemoved);
-      const newEnd = Math.max(newStart, end - (selectedText.length - updatedText.length));
-      codeInput.setSelectionRange(newStart, newEnd);
-
-    } else {
-      if (start === end) {
-        codeInput.value = val.substring(0, start) + '  ' + val.substring(end);
-        codeInput.setSelectionRange(start + 2, start + 2);
       } else {
-        const lines = selectedText.split('\n');
-        const updatedLines = lines.map(line => '  ' + line);
-        const updatedText = updatedLines.join('\n');
-
-        codeInput.value = val.substring(0, lineStart) + updatedText + val.substring(lineEnd);
-        codeInput.setSelectionRange(lineStart, lineStart + updatedText.length);
+        return '  ' + line;
       }
+    });
+    
+    const replacement = processedLines.join('\n');
+    codeInput.value = val.substring(0, firstLineStart) + replacement + val.substring(lastLineEnd);
+    
+    if (isMultiLine) {
+      // Keep block highlighted for multi-line adjustments
+      codeInput.setSelectionRange(firstLineStart, firstLineStart + replacement.length);
+    } else {
+      // Collapse cursor for single-line adjustments
+      const newCursorPos = start + (e.shiftKey ? -Math.min(2, start - firstLineStart) : 2);
+      codeInput.setSelectionRange(newCursorPos, newCursorPos);
     }
     return;
   }
@@ -894,14 +868,9 @@ runBtn.addEventListener('click', function() {
     try { updateFn = assoc(globalEnv, 'UPDATE', 0, 0); } catch (e) {}
 
     if (updateFn) {
-      let lastTime = performance.now();
-
-      function loop(currentTime) {
-        const dt = (currentTime - lastTime) / 1000.0;
-        lastTime = currentTime;
-
+      function loop() {
         try {
-          trampoline(callClosure(updateFn, [dt], 0, 0));
+          trampoline(callClosure(updateFn, [], 0, 0));
         } catch (updateErr) {
           if (updateErr instanceof ProgramEndSignal) return;
           if (updateErr instanceof LispRuntimeError) {
@@ -917,11 +886,7 @@ runBtn.addEventListener('click', function() {
           animationFrameId = requestAnimationFrame(loop);
         }
       }
-
-      animationFrameId = requestAnimationFrame((timestamp) => {
-        lastTime = timestamp;
-        animationFrameId = requestAnimationFrame(loop);
-      });
+      animationFrameId = requestAnimationFrame(loop);
     } else {
       stopProgram();
     }
