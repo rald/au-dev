@@ -122,6 +122,7 @@
   const canvas = document.getElementById('displayCanvas');
   const ctx = canvas.getContext('2d', { alpha: false });
   
+  // Disable sub-pixel smoothing if available
   if (ctx.imageSmoothingEnabled) {
     ctx.imageSmoothingEnabled = false;
   }
@@ -156,6 +157,8 @@
     return colStr;
   }
 
+  // Exact pixel rasterization helper for lines using Bresenham's logic
+  // to avoid fuzzy browser path vector anti-aliasing.
   function drawBresenhamLine(x0, y0, x1, y1, colorStr) {
     x0 = Math.floor(x0);
     y0 = Math.floor(y0);
@@ -184,6 +187,7 @@
     }
   }
 
+  // Exact pixel rasterization for circles (Midpoint Circle Algorithm)
   function drawBresenhamCircle(xc, yc, r, colorStr, filled) {
     xc = Math.floor(xc);
     yc = Math.floor(yc);
@@ -236,14 +240,6 @@
     }
   }
 
-  // Special signal to halt execution immediately on (END)
-  class ProgramEndSignal extends Error {
-    constructor() {
-      super("Program ended");
-      this.name = "ProgramEndSignal";
-    }
-  }
-
   function unescapeString(str) {
     return str
       .replace(/\\n/g, '\n')
@@ -265,15 +261,6 @@
 
   let activeAppendOutput = null;
   let animationFrameId = null;
-
-  function stopProgram() {
-    if (animationFrameId) {
-      cancelAnimationFrame(animationFrameId);
-      animationFrameId = null;
-    }
-    runBtn.textContent = 'RUN';
-    runBtn.classList.remove('running');
-  }
 
   function makeEnv(bindings = {}, parent = null) {
     return { bindings, parent };
@@ -356,6 +343,7 @@
     },
     'PGET': (x, y) => pget(x, y),
 
+    // Crisp Non-Antialiased Geometry Primitives
     'LINE': (x1, y1, x2, y2, color) => {
       drawBresenhamLine(x1, y1, x2, y2, parseColor(color, '#ffffff'));
       return 'T';
@@ -384,11 +372,6 @@
     'FCIRC': (x, y, r, color) => {
       drawBresenhamCircle(x, y, r, parseColor(color, '#ffffff'), true);
       return 'T';
-    },
-
-    'END': () => {
-      stopProgram();
-      throw new ProgramEndSignal();
     },
 
     '<': (a, b) => a < b ? 'T' : 'NIL',
@@ -558,7 +541,6 @@
         const res = callClosure(evaluatedOp, evaluatedArgs, line, col);
         return res instanceof TailCall ? trampoline(res) : res;
       } catch (jsErr) {
-        if (jsErr instanceof ProgramEndSignal) throw jsErr;
         if (jsErr instanceof LispRuntimeError) {
           if (!jsErr.line) { jsErr.line = line; jsErr.col = col; }
           throw jsErr;
@@ -678,9 +660,11 @@
   codeInput.addEventListener('keydown', function(e) {
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'l') {
       e.preventDefault();
+      
       const val = codeInput.value;
       const lines = val.split('\n');
       const maxLines = lines.length;
+      
       const cursorLoc = codeInput.selectionStart;
       let currentLine = 1;
       let lastNewlineIdx = -1;
@@ -691,18 +675,23 @@
         }
       }
       const currentCol = cursorLoc - lastNewlineIdx;
+
       const promptMsg = `Current Line:Col -> ${currentLine}:${currentCol} | Max Lines -> ${maxLines}\nGo to line:column (e.g. 5:12):`;
       const input = prompt(promptMsg);
       if (!input) return;
+
       const parts = input.split(':');
       const targetLine = parseInt(parts[0], 10);
       const targetCol = parts.length > 1 ? parseInt(parts[1], 10) : 1;
+      
       if (isNaN(targetLine) || targetLine < 1) return;
+
       let charIndex = 0;
       for (let i = 0; i < Math.min(targetLine - 1, lines.length); i++) {
         charIndex += lines[i].length + 1;
       }
       charIndex += Math.max(0, targetCol - 1);
+      
       codeInput.focus();
       codeInput.setSelectionRange(charIndex, charIndex);
       return;
@@ -713,15 +702,19 @@
       const start = codeInput.selectionStart;
       const end = codeInput.selectionEnd;
       const val = codeInput.value;
+
       const firstLineStart = val.lastIndexOf('\n', start - 1) + 1;
+      
       let effectiveEnd = end;
       if (end > start && val.charAt(end - 1) === '\n') {
         effectiveEnd = end - 1;
       }
       let lastLineEnd = val.indexOf('\n', effectiveEnd);
       if (lastLineEnd === -1) lastLineEnd = val.length;
+
       const selectedBlock = val.substring(firstLineStart, lastLineEnd);
       const lines = selectedBlock.split('\n');
+
       const processedLines = lines.map(line => {
         if (e.shiftKey) {
           if (line.startsWith('  ')) return line.substring(2);
@@ -731,6 +724,7 @@
           return '  ' + line;
         }
       });
+
       const replacement = processedLines.join('\n');
       codeInput.value = val.substring(0, firstLineStart) + replacement + val.substring(lastLineEnd);
       codeInput.setSelectionRange(firstLineStart, firstLineStart + replacement.length);
@@ -742,12 +736,15 @@
       const start = codeInput.selectionStart;
       const end = codeInput.selectionEnd;
       const val = codeInput.value;
+
       const lineStart = val.lastIndexOf('\n', start - 1) + 1;
       const currentLine = val.substring(lineStart, start);
       const match = currentLine.match(/^([ \t]*)/);
       const indent = match ? match[1] : '';
+
       const openExtra = (currentLine.match(/\(/g) || []).length > (currentLine.match(/\)/g) || []).length;
       const extraIndent = openExtra ? '  ' : '';
+
       const insertion = '\n' + indent + extraIndent;
       codeInput.value = val.substring(0, start) + insertion + val.substring(end);
       const newPos = start + insertion.length;
@@ -763,6 +760,15 @@
     else console.log(text);
   }
   activeAppendOutput = logToConsole;
+
+  function stopProgram() {
+    if (animationFrameId) {
+      cancelAnimationFrame(animationFrameId);
+      animationFrameId = null;
+    }
+    runBtn.textContent = 'RUN';
+    runBtn.classList.remove('running');
+  }
 
   runBtn.addEventListener('click', function() {
     if (animationFrameId) {
@@ -790,9 +796,6 @@
           const rawResult = evaluate(expandMacros(expr), globalEnv);
           trampoline(rawResult);
         } catch (evalErr) {
-          if (evalErr instanceof ProgramEndSignal) {
-            return;
-          }
           if (evalErr instanceof LispRuntimeError) {
             const loc = evalErr.line > 0 ? ` [Line ${evalErr.line}, Col ${evalErr.col}]` : '';
             logToConsole(`Error${loc}: ${evalErr.message}`, "output-err");
@@ -811,7 +814,6 @@
         try {
           trampoline(callClosure(setupFn, [], 0, 0));
         } catch (setupErr) {
-          if (setupErr instanceof ProgramEndSignal) return;
           if (setupErr instanceof LispRuntimeError) {
             const loc = setupErr.line > 0 ? ` [Line ${setupErr.line}, Col ${setupErr.col}]` : '';
             logToConsole(`Setup Error${loc}: ${setupErr.message}`, "output-err");
@@ -831,7 +833,6 @@
           try {
             trampoline(callClosure(updateFn, [], 0, 0));
           } catch (updateErr) {
-            if (updateErr instanceof ProgramEndSignal) return;
             if (updateErr instanceof LispRuntimeError) {
               const loc = updateErr.line > 0 ? ` [Line ${updateErr.line}, Col ${updateErr.col}]` : '';
               logToConsole(`Update Error${loc}: ${updateErr.message}`, "output-err");
@@ -841,9 +842,7 @@
             stopProgram();
             return;
           }
-          if (animationFrameId !== null) {
-            animationFrameId = requestAnimationFrame(loop);
-          }
+          animationFrameId = requestAnimationFrame(loop);
         }
         animationFrameId = requestAnimationFrame(loop);
       } else {

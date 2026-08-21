@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Pantasya JS AU LISP</title>
+  <title>SectorLISP JS IDE - Responsive Canvas (Zoom 4)</title>
   <style>
     body {
       background-color: #0d1117;
@@ -49,7 +49,6 @@
       resize: vertical;
       box-sizing: border-box;
       outline: none;
-      tab-size: 2;
     }
     textarea:focus {
       border-color: #58a6ff;
@@ -62,9 +61,6 @@
       background-color: #000000;
       border: 2px solid #30363d;
       border-radius: 6px;
-      /* Enforce crisp pixel scaling and prevent antialiasing */
-      image-rendering: -moz-crisp-edges;
-      image-rendering: -webkit-crisp-edges;
       image-rendering: pixelated;
       image-rendering: crisp-edges;
     }
@@ -106,7 +102,19 @@
 
   <div class="container">
     <div class="pane">
-      <textarea id="codeInput" placeholder="Code Here!"></textarea>
+      <textarea id="codeInput">
+(DEFINE RND (LAMBDA (N)
+  (FLOOR (* (RANDOM) N))
+))
+
+(DEFINE SETUP (LAMBDA ()
+  (CLS (COLOR 0 0 0))
+))
+
+(DEFINE UPDATE (LAMBDA ()
+  (PSET (RND 128) (RND 128) (COLOR (RND 256) (RND 256) (RND 256)))
+))
+      </textarea>
     </div>
 
     <div class="canvas-pane">
@@ -120,12 +128,8 @@
 
 <script>
   const canvas = document.getElementById('displayCanvas');
-  const ctx = canvas.getContext('2d', { alpha: false });
+  const ctx = canvas.getContext('2d');
   
-  if (ctx.imageSmoothingEnabled) {
-    ctx.imageSmoothingEnabled = false;
-  }
-
   function clearScreen(color = '#000000') {
     ctx.fillStyle = color;
     ctx.fillRect(0, 0, 128, 128);
@@ -144,87 +148,6 @@
     return ['QUOTE', ['COLOR', pixel[0], pixel[1], pixel[2], pixel[3]]];
   }
 
-  function parseColor(color, defaultStr = '#ffffff') {
-    let colStr = defaultStr;
-    if (Array.isArray(color) && color[0] === 'COLOR') {
-      const [, r, g, b, a = 255] = color;
-      colStr = `rgba(${r}, ${g}, ${b}, ${Math.max(0, Math.min(1, a / 255))})`;
-    } else if (color) {
-      colStr = lispToString(color);
-      if (colStr.startsWith('"') && colStr.endsWith('"')) colStr = colStr.slice(1, -1);
-    }
-    return colStr;
-  }
-
-  function drawBresenhamLine(x0, y0, x1, y1, colorStr) {
-    x0 = Math.floor(x0);
-    y0 = Math.floor(y0);
-    x1 = Math.floor(x1);
-    y1 = Math.floor(y1);
-
-    const dx = Math.abs(x1 - x0);
-    const dy = Math.abs(y1 - y0);
-    const sx = (x0 < x1) ? 1 : -1;
-    const sy = (y0 < y1) ? 1 : -1;
-    let err = dx - dy;
-
-    ctx.fillStyle = colorStr;
-    while (true) {
-      ctx.fillRect(x0, y0, 1, 1);
-      if (x0 === x1 && y0 === y1) break;
-      const e2 = 2 * err;
-      if (e2 > -dy) {
-        err -= dy;
-        x0 += sx;
-      }
-      if (e2 < dx) {
-        err += dx;
-        y0 += sy;
-      }
-    }
-  }
-
-  function drawBresenhamCircle(xc, yc, r, colorStr, filled) {
-    xc = Math.floor(xc);
-    yc = Math.floor(yc);
-    r = Math.floor(r);
-    ctx.fillStyle = colorStr;
-
-    let x = 0;
-    let y = r;
-    let d = 3 - 2 * r;
-
-    function plotCirclePoints(cx, cy, px, py) {
-      if (filled) {
-        ctx.fillRect(cx - px, cy + py, px * 2 + 1, 1);
-        ctx.fillRect(cx - px, cy - py, px * 2 + 1, 1);
-        ctx.fillRect(cx - py, cy + px, py * 2 + 1, 1);
-        ctx.fillRect(cx - py, cy - px, py * 2 + 1, 1);
-      } else {
-        ctx.fillRect(cx + px, cy + py, 1, 1);
-        ctx.fillRect(cx - px, cy + py, 1, 1);
-        ctx.fillRect(cx + px, cy - py, 1, 1);
-        ctx.fillRect(cx - px, cy - py, 1, 1);
-        ctx.fillRect(cx + py, cy + px, 1, 1);
-        ctx.fillRect(cx - py, cy + px, 1, 1);
-        ctx.fillRect(cx + py, cy - px, 1, 1);
-        ctx.fillRect(cx - py, cy - px, 1, 1);
-      }
-    }
-
-    plotCirclePoints(xc, yc, x, y);
-    while (y >= x) {
-      x++;
-      if (d > 0) {
-        y--;
-        d = d + 4 * (x - y) + 10;
-      } else {
-        d = d + 4 * x + 6;
-      }
-      plotCirclePoints(xc, yc, x, y);
-    }
-  }
-
   clearScreen('#000000');
 
   class LispRuntimeError extends Error {
@@ -233,14 +156,6 @@
       this.name = "LispRuntimeError";
       this.line = line;
       this.col = col;
-    }
-  }
-
-  // Special signal to halt execution immediately on (END)
-  class ProgramEndSignal extends Error {
-    constructor() {
-      super("Program ended");
-      this.name = "ProgramEndSignal";
     }
   }
 
@@ -265,15 +180,6 @@
 
   let activeAppendOutput = null;
   let animationFrameId = null;
-
-  function stopProgram() {
-    if (animationFrameId) {
-      cancelAnimationFrame(animationFrameId);
-      animationFrameId = null;
-    }
-    runBtn.textContent = 'RUN';
-    runBtn.classList.remove('running');
-  }
 
   function makeEnv(bindings = {}, parent = null) {
     return { bindings, parent };
@@ -346,50 +252,33 @@
     },
 
     'CLS': (color) => {
-      clearScreen(parseColor(color, '#000000'));
+      let colStr = '#000000';
+      if (color) {
+        if (Array.isArray(color) && color[0] === 'COLOR') {
+          const [, r, g, b, a = 255] = color;
+          colStr = `rgba(${r}, ${g}, ${b}, ${Math.max(0, Math.min(1, a / 255))})`;
+        } else {
+          colStr = lispToString(color);
+          if (colStr.startsWith('"') && colStr.endsWith('"')) colStr = colStr.slice(1, -1);
+        }
+      }
+      clearScreen(colStr);
       return 'T';
     },
 
     'PSET': (x, y, color) => {
-      pset(x, y, parseColor(color, '#ffffff'));
+      let colStr = '#ffffff';
+      if (Array.isArray(color) && color[0] === 'COLOR') {
+        const [, r, g, b, a = 255] = color;
+        colStr = `rgba(${r}, ${g}, ${b}, ${Math.max(0, Math.min(1, a / 255))})`;
+      } else if (color) {
+        colStr = lispToString(color);
+        if (colStr.startsWith('"') && colStr.endsWith('"')) colStr = colStr.slice(1, -1);
+      }
+      pset(x, y, colStr);
       return 'T';
     },
     'PGET': (x, y) => pget(x, y),
-
-    'LINE': (x1, y1, x2, y2, color) => {
-      drawBresenhamLine(x1, y1, x2, y2, parseColor(color, '#ffffff'));
-      return 'T';
-    },
-    'RECT': (x, y, w, h, color) => {
-      const rx = Math.floor(x);
-      const ry = Math.floor(y);
-      const rw = Math.floor(w);
-      const rh = Math.floor(h);
-      const colStr = parseColor(color, '#ffffff');
-      drawBresenhamLine(rx, ry, rx + rw, ry, colStr);
-      drawBresenhamLine(rx + rw, ry, rx + rw, ry + rh, colStr);
-      drawBresenhamLine(rx + rw, ry + rh, rx, ry + rh, colStr);
-      drawBresenhamLine(rx, ry + rh, rx, ry, colStr);
-      return 'T';
-    },
-    'FRECT': (x, y, w, h, color) => {
-      ctx.fillStyle = parseColor(color, '#ffffff');
-      ctx.fillRect(Math.floor(x), Math.floor(y), Math.floor(w), Math.floor(h));
-      return 'T';
-    },
-    'CIRC': (x, y, r, color) => {
-      drawBresenhamCircle(x, y, r, parseColor(color, '#ffffff'), false);
-      return 'T';
-    },
-    'FCIRC': (x, y, r, color) => {
-      drawBresenhamCircle(x, y, r, parseColor(color, '#ffffff'), true);
-      return 'T';
-    },
-
-    'END': () => {
-      stopProgram();
-      throw new ProgramEndSignal();
-    },
 
     '<': (a, b) => a < b ? 'T' : 'NIL',
     '>': (a, b) => a > b ? 'T' : 'NIL',
@@ -526,18 +415,6 @@
         }
         return 'NIL';
       }
-      
-      if (op === 'WHILE') {
-        const [condition, ...body] = args;
-        let lastRes = 'NIL';
-        while (evaluate(condition, env) !== 'NIL') {
-          for (const stmt of body) {
-            lastRes = evaluate(stmt, env);
-          }
-        }
-        return lastRes;
-      }
-
       if (op === 'LABEL') return expr;
       if (op === 'LAMBDA') return ['CLOSURE', env, args[0], args[1]];
       if (op === 'BEGIN') {
@@ -558,7 +435,6 @@
         const res = callClosure(evaluatedOp, evaluatedArgs, line, col);
         return res instanceof TailCall ? trampoline(res) : res;
       } catch (jsErr) {
-        if (jsErr instanceof ProgramEndSignal) throw jsErr;
         if (jsErr instanceof LispRuntimeError) {
           if (!jsErr.line) { jsErr.line = line; jsErr.col = col; }
           throw jsErr;
@@ -591,13 +467,6 @@
       const vals = bindings.map(b => expandMacros(b[1]));
       return annotate([['LAMBDA', vars, expandMacros(body)], ...vals], line, col);
     }
-    
-    if (macroOp === 'IF') {
-      const [condition, thenBranch, elseBranch = 'NIL'] = args;
-      const condExpr = ['COND', [condition, thenBranch], ['T', elseBranch]];
-      return expandMacros(annotate(condExpr, line, col));
-    }
-
     return annotate(expr.map(expandMacros), line, col);
   }
 
@@ -615,26 +484,6 @@
     });
 
     if (tokens.length === 0) return [];
-
-    let openParens = 0;
-    let lastOpenTok = null;
-    
-    for (const tok of tokens) {
-      if (tok.value === '(') {
-        openParens++;
-        lastOpenTok = tok;
-      } else if (tok.value === ')') {
-        openParens--;
-        if (openParens < 0) {
-          throw new Error(`Unmatched closing parenthesis ')' at line ${tok.line}, col ${tok.col}`);
-        }
-      }
-    }
-    
-    if (openParens > 0 && lastOpenTok) {
-      throw new Error(`Unclosed parenthesis '(' at line ${lastOpenTok.line}, col ${lastOpenTok.col}`);
-    }
-
     let tokenIndex = 0;
 
     function parseTokens() {
@@ -673,89 +522,8 @@
     return expressions;
   }
 
-  const codeInput = document.getElementById('codeInput');
-
-  codeInput.addEventListener('keydown', function(e) {
-    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'l') {
-      e.preventDefault();
-      const val = codeInput.value;
-      const lines = val.split('\n');
-      const maxLines = lines.length;
-      const cursorLoc = codeInput.selectionStart;
-      let currentLine = 1;
-      let lastNewlineIdx = -1;
-      for (let i = 0; i < cursorLoc; i++) {
-        if (val.charAt(i) === '\n') {
-          currentLine++;
-          lastNewlineIdx = i;
-        }
-      }
-      const currentCol = cursorLoc - lastNewlineIdx;
-      const promptMsg = `Current Line:Col -> ${currentLine}:${currentCol} | Max Lines -> ${maxLines}\nGo to line:column (e.g. 5:12):`;
-      const input = prompt(promptMsg);
-      if (!input) return;
-      const parts = input.split(':');
-      const targetLine = parseInt(parts[0], 10);
-      const targetCol = parts.length > 1 ? parseInt(parts[1], 10) : 1;
-      if (isNaN(targetLine) || targetLine < 1) return;
-      let charIndex = 0;
-      for (let i = 0; i < Math.min(targetLine - 1, lines.length); i++) {
-        charIndex += lines[i].length + 1;
-      }
-      charIndex += Math.max(0, targetCol - 1);
-      codeInput.focus();
-      codeInput.setSelectionRange(charIndex, charIndex);
-      return;
-    }
-
-    if (e.key === 'Tab') {
-      e.preventDefault();
-      const start = codeInput.selectionStart;
-      const end = codeInput.selectionEnd;
-      const val = codeInput.value;
-      const firstLineStart = val.lastIndexOf('\n', start - 1) + 1;
-      let effectiveEnd = end;
-      if (end > start && val.charAt(end - 1) === '\n') {
-        effectiveEnd = end - 1;
-      }
-      let lastLineEnd = val.indexOf('\n', effectiveEnd);
-      if (lastLineEnd === -1) lastLineEnd = val.length;
-      const selectedBlock = val.substring(firstLineStart, lastLineEnd);
-      const lines = selectedBlock.split('\n');
-      const processedLines = lines.map(line => {
-        if (e.shiftKey) {
-          if (line.startsWith('  ')) return line.substring(2);
-          if (line.startsWith(' ')) return line.substring(1);
-          return line;
-        } else {
-          return '  ' + line;
-        }
-      });
-      const replacement = processedLines.join('\n');
-      codeInput.value = val.substring(0, firstLineStart) + replacement + val.substring(lastLineEnd);
-      codeInput.setSelectionRange(firstLineStart, firstLineStart + replacement.length);
-      return;
-    }
-
-    if (e.key === 'Enter') {
-      e.preventDefault();
-      const start = codeInput.selectionStart;
-      const end = codeInput.selectionEnd;
-      const val = codeInput.value;
-      const lineStart = val.lastIndexOf('\n', start - 1) + 1;
-      const currentLine = val.substring(lineStart, start);
-      const match = currentLine.match(/^([ \t]*)/);
-      const indent = match ? match[1] : '';
-      const openExtra = (currentLine.match(/\(/g) || []).length > (currentLine.match(/\)/g) || []).length;
-      const extraIndent = openExtra ? '  ' : '';
-      const insertion = '\n' + indent + extraIndent;
-      codeInput.value = val.substring(0, start) + insertion + val.substring(end);
-      const newPos = start + insertion.length;
-      codeInput.setSelectionRange(newPos, newPos);
-    }
-  });
-
   const runBtn = document.getElementById('runBtn');
+  const codeInput = document.getElementById('codeInput');
 
   function logToConsole(text, type) {
     if (type === 'output-err') console.error(text);
@@ -763,6 +531,15 @@
     else console.log(text);
   }
   activeAppendOutput = logToConsole;
+
+  function stopProgram() {
+    if (animationFrameId) {
+      cancelAnimationFrame(animationFrameId);
+      animationFrameId = null;
+    }
+    runBtn.textContent = 'RUN';
+    runBtn.classList.remove('running');
+  }
 
   runBtn.addEventListener('click', function() {
     if (animationFrameId) {
@@ -790,9 +567,6 @@
           const rawResult = evaluate(expandMacros(expr), globalEnv);
           trampoline(rawResult);
         } catch (evalErr) {
-          if (evalErr instanceof ProgramEndSignal) {
-            return;
-          }
           if (evalErr instanceof LispRuntimeError) {
             const loc = evalErr.line > 0 ? ` [Line ${evalErr.line}, Col ${evalErr.col}]` : '';
             logToConsole(`Error${loc}: ${evalErr.message}`, "output-err");
@@ -811,7 +585,6 @@
         try {
           trampoline(callClosure(setupFn, [], 0, 0));
         } catch (setupErr) {
-          if (setupErr instanceof ProgramEndSignal) return;
           if (setupErr instanceof LispRuntimeError) {
             const loc = setupErr.line > 0 ? ` [Line ${setupErr.line}, Col ${setupErr.col}]` : '';
             logToConsole(`Setup Error${loc}: ${setupErr.message}`, "output-err");
@@ -831,7 +604,6 @@
           try {
             trampoline(callClosure(updateFn, [], 0, 0));
           } catch (updateErr) {
-            if (updateErr instanceof ProgramEndSignal) return;
             if (updateErr instanceof LispRuntimeError) {
               const loc = updateErr.line > 0 ? ` [Line ${updateErr.line}, Col ${updateErr.col}]` : '';
               logToConsole(`Update Error${loc}: ${updateErr.message}`, "output-err");
@@ -841,9 +613,7 @@
             stopProgram();
             return;
           }
-          if (animationFrameId !== null) {
-            animationFrameId = requestAnimationFrame(loop);
-          }
+          animationFrameId = requestAnimationFrame(loop);
         }
         animationFrameId = requestAnimationFrame(loop);
       } else {
