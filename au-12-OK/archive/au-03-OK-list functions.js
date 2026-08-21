@@ -322,6 +322,7 @@ const baseEnv = makeEnv({
   'CONS': (x, y) => [x, ...(Array.isArray(y) && y !== 'NIL' ? y : [y])],
   'LIST': (...args) => args.length === 0 ? 'NIL' : args,
   
+  // --- ADDED LIST UTILITIES ---
   'LIST-PUSH-BACK': (lst, item) => {
     const arr = (lst === 'NIL' || !Array.isArray(lst)) ? [] : [...lst];
     arr.push(item);
@@ -380,21 +381,7 @@ const baseEnv = makeEnv({
     const idx = lst.findIndex(elem => elem === item);
     return idx !== -1 ? idx : -1;
   },
-  'LIST-FLATTEN': function deepFlatten(lst) {
-    if (!Array.isArray(lst) || lst === 'NIL') return 'NIL';
-    let result = [];
-    for (const item of lst) {
-      if (Array.isArray(item)) {
-        const flattenedSub = deepFlatten(item);
-        if (flattenedSub !== 'NIL') {
-          result = result.concat(flattenedSub);
-        }
-      } else {
-        result.push(item);
-      }
-    }
-    return result.length === 0 ? 'NIL' : result;
-  },
+  // ----------------------------
 
   'APPEND': (...lists) => {
     let result = [];
@@ -591,33 +578,12 @@ function expandMacros(expr) {
 }
 
 function parseAllLispExpressions(text) {
-  // 1. Remove multi-line comments: #| ... |#
-  let cleanText = text.replace(/#\|[\s\S]*?\|#/g, '');
-  
-  // 2. Remove single-line comments starting with # or ;
+  const cleanText = text.replace(/;.*$/gm, '');
   const lines = cleanText.split('\n');
-  const processedLines = lines.map(line => {
-    let commentIdx = -1;
-    let inString = false;
-    for (let i = 0; i < line.length; i++) {
-      const char = line[i];
-      if (char === '"' && (i === 0 || line[i - 1] !== '\\')) {
-        inString = !inString;
-      }
-      if (!inString && (char === ';' || char === '#')) {
-        commentIdx = i;
-        break;
-      }
-    }
-    return commentIdx !== -1 ? line.substring(0, commentIdx) : line;
-  });
-
-  const finalCleanText = processedLines.join('\n');
-  const tokenLines = finalCleanText.split('\n');
   const regex = /("[^"\\]*(?:\\.[^"\\]*)*"|,\@|`|,|'|\(|\)|[^\s()]+)/g;
   const tokens = [];
 
-  tokenLines.forEach((line, idx) => {
+  lines.forEach((line, idx) => {
     let match;
     while ((match = regex.exec(line)) !== null) {
       tokens.push({ value: match[0], line: idx + 1, col: match.index + 1 });
@@ -730,11 +696,8 @@ codeInput.addEventListener('keydown', function(e) {
     }
     let lastLineEnd = val.indexOf('\n', effectiveEnd);
     if (lastLineEnd === -1) lastLineEnd = val.length;
-    
     const selectedBlock = val.substring(firstLineStart, lastLineEnd);
     const lines = selectedBlock.split('\n');
-    const isMultiLine = lines.length > 1;
-
     const processedLines = lines.map(line => {
       if (e.shiftKey) {
         if (line.startsWith('  ')) return line.substring(2);
@@ -744,18 +707,9 @@ codeInput.addEventListener('keydown', function(e) {
         return '  ' + line;
       }
     });
-    
     const replacement = processedLines.join('\n');
     codeInput.value = val.substring(0, firstLineStart) + replacement + val.substring(lastLineEnd);
-    
-    if (isMultiLine) {
-      // Keep block highlighted for multi-line adjustments
-      codeInput.setSelectionRange(firstLineStart, firstLineStart + replacement.length);
-    } else {
-      // Collapse cursor for single-line adjustments
-      const newCursorPos = start + (e.shiftKey ? -Math.min(2, start - firstLineStart) : 2);
-      codeInput.setSelectionRange(newCursorPos, newCursorPos);
-    }
+    codeInput.setSelectionRange(firstLineStart, firstLineStart + replacement.length);
     return;
   }
 

@@ -1,0 +1,17 @@
+(DEFINE RND (LAMBDA (X)
+  (FLOOR (* (RANDOM) X))
+))
+
+(DEFINE SETUP (LAMBDA ()
+  (CLS)
+))
+
+(DEFINE UPDATE (LAMBDA () (BEGIN
+  (LET  (
+          (X (RND 128))
+          (Y (RND 128))
+          (C (COLOR (RND 256) (RND 256) (RND 256)))
+        )
+    (PSET X Y C)
+  )
+)))

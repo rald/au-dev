@@ -730,11 +730,8 @@ codeInput.addEventListener('keydown', function(e) {
     }
     let lastLineEnd = val.indexOf('\n', effectiveEnd);
     if (lastLineEnd === -1) lastLineEnd = val.length;
-    
     const selectedBlock = val.substring(firstLineStart, lastLineEnd);
     const lines = selectedBlock.split('\n');
-    const isMultiLine = lines.length > 1;
-
     const processedLines = lines.map(line => {
       if (e.shiftKey) {
         if (line.startsWith('  ')) return line.substring(2);
@@ -744,18 +741,9 @@ codeInput.addEventListener('keydown', function(e) {
         return '  ' + line;
       }
     });
-    
     const replacement = processedLines.join('\n');
     codeInput.value = val.substring(0, firstLineStart) + replacement + val.substring(lastLineEnd);
-    
-    if (isMultiLine) {
-      // Keep block highlighted for multi-line adjustments
-      codeInput.setSelectionRange(firstLineStart, firstLineStart + replacement.length);
-    } else {
-      // Collapse cursor for single-line adjustments
-      const newCursorPos = start + (e.shiftKey ? -Math.min(2, start - firstLineStart) : 2);
-      codeInput.setSelectionRange(newCursorPos, newCursorPos);
-    }
+    codeInput.setSelectionRange(firstLineStart, firstLineStart + replacement.length);
     return;
   }
 
