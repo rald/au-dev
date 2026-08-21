@@ -52,7 +52,13 @@ function drawText(str, x, y, colorStr) {
   for (let i = 0; i < textStr.length; i++) {
     const code = textStr.charCodeAt(i);
     
-    if (code === 10 || cursorX + 8 > CANVAS_WIDTH) {
+    if (code === 10) {
+      cursorX = startX;
+      startY += 8;
+      continue;
+    }
+    
+    if (cursorX + 8 > CANVAS_WIDTH) {
       cursorX = startX;
       startY += 8;
     }

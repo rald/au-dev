@@ -344,8 +344,7 @@ const baseEnv = makeEnv({
   'pget': (x, y) => pget(x, y),
 
   'text': (str, x, y, color) => {
-    let textStr = lispToString(str);
-    drawText(textStr, x, y, parseColor(color, '#ffffff'));
+    drawText(str, x, y, parseColor(color, '#ffffff'));
     return 'T';
   },
 
@@ -667,6 +666,7 @@ function annotate(node, line, col) {
 function expandMacros(expr) {
   if (!Array.isArray(expr)) return expr;
   const [op, ...args] = expr;
+  // Case-sensitive check for lowercase macro keywords
   const macroOp = typeof op === 'string' ? op : '';
   const line = expr._line || 0;
   const col = expr._col || 0;
