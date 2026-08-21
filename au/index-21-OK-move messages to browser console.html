@@ -3,42 +3,43 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>SectorLISP JS IDE - Responsive Canvas (Zoom 4)</title>
+  <title>SectorLISP JS IDE - Console Only Output</title>
   <style>
     body {
       background-color: #0d1117;
       color: #c9d1d9;
       font-family: 'Courier New', Courier, monospace;
       margin: 0;
-      padding: 15px;
+      padding: 20px;
       display: flex;
       flex-direction: column;
-      min-height: 100vh;
+      height: 100vh;
       box-sizing: border-box;
+    }
+    h2 {
+      margin-top: 0;
+      color: #58a6ff;
+      border-bottom: 1px solid #30363d;
+      padding-bottom: 10px;
     }
     .container {
       display: flex;
-      gap: 20px;
+      flex-direction: column;
       flex: 1;
       min-height: 0;
-      flex-wrap: wrap;
     }
     .pane {
+      display: flex;
+      flex-direction: column;
       flex: 1;
-      min-width: 280px;
-      display: flex;
-      flex-direction: column;
     }
-    .canvas-pane {
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: flex-start;
-      min-width: 280px;
+    label {
+      margin-bottom: 8px;
+      color: #8b949e;
+      font-weight: bold;
     }
     textarea {
       flex: 1;
-      min-height: 250px;
       background-color: #161b22;
       border: 1px solid #30363d;
       border-radius: 6px;
@@ -46,23 +47,12 @@
       color: #c9d1d9;
       font-family: 'Courier New', Courier, monospace;
       font-size: 14px;
-      resize: vertical;
+      resize: none;
       box-sizing: border-box;
       outline: none;
     }
     textarea:focus {
       border-color: #58a6ff;
-    }
-    canvas {
-      width: 512px;
-      height: 512px;
-      max-width: 100%;
-      aspect-ratio: 1 / 1;
-      background-color: #000000;
-      border: 2px solid #30363d;
-      border-radius: 6px;
-      image-rendering: pixelated;
-      image-rendering: crisp-edges;
     }
     .controls {
       margin-top: 15px;
@@ -80,76 +70,46 @@
       font-weight: bold;
       cursor: pointer;
       transition: background-color 0.2s;
-      width: 100%;
-    }
-    button.running {
-      background-color: #da3633;
-    }
-    button.running:hover {
-      background-color: #f85149;
-    }
-    @media (min-width: 600px) {
-      button {
-        width: auto;
-      }
     }
     button:hover {
       background-color: #2ea043;
+    }
+    .instructions {
+      margin-top: 10px;
+      color: #8b949e;
+      font-size: 13px;
+      font-style: italic;
     }
   </style>
 </head>
 <body>
 
+  <h2>SectorLISP JS IDE (Console-Only Output)</h2>
+  
   <div class="container">
     <div class="pane">
-      <textarea id="codeInput">
-(DEFINE RND (LAMBDA (N)
-  (FLOOR (* (RANDOM) N))
-))
+      <label for="codeInput">Source Code / Expressions:</label>
+      <textarea id="codeInput">(BEGIN
+  ;; Test bitwise operations:
+  (PRINT "Bitwise AND (5 & 3):" (BITAND 5 3))
+  (PRINT "Bitwise OR (5 | 3):" (BITOR 5 3))
+  (PRINT "Left Shift (1 << 3):" (SHL 1 3))
 
-(DEFINE SETUP (LAMBDA ()
-  (CLS (COLOR 0 0 0))
-))
-
-(DEFINE UPDATE (LAMBDA ()
-  (PSET (RND 128) (RND 128) (COLOR (RND 256) (RND 256) (RND 256)))
-))
-      </textarea>
-    </div>
-
-    <div class="canvas-pane">
-      <canvas id="displayCanvas" width="128" height="128"></canvas>
+  ;; Test type predicates & helpers:
+  (PRINT "Is 42 a number?" (NUMBERP 42))
+  (PRINT "Append lists:" (APPEND '(1 2) '(3 4)))
+  
+  ;; Trigger error with line/col tracking:
+  (/ 100 0))</textarea>
+      <div class="instructions">Tip: Open your browser's Developer Console (Press F12 or Right-click -> Inspect -> Console) to view execution outputs and errors.</div>
     </div>
   </div>
 
   <div class="controls">
-    <button id="runBtn">RUN</button>
+    <button id="runBtn">Run Code</button>
   </div>
 
 <script>
-  const canvas = document.getElementById('displayCanvas');
-  const ctx = canvas.getContext('2d');
-  
-  function clearScreen(color = '#000000') {
-    ctx.fillStyle = color;
-    ctx.fillRect(0, 0, 128, 128);
-  }
-
-  function pset(x, y, color = '#ffffff') {
-    ctx.fillStyle = color;
-    ctx.fillRect(Math.floor(x), Math.floor(y), 1, 1);
-  }
-
-  function pget(x, y) {
-    const px = Math.floor(x);
-    const py = Math.floor(y);
-    if (px < 0 || px >= 128 || py < 0 || py >= 128) return ['QUOTE', ['COLOR', 0, 0, 0, 255]];
-    const pixel = ctx.getImageData(px, py, 1, 1).data;
-    return ['QUOTE', ['COLOR', pixel[0], pixel[1], pixel[2], pixel[3]]];
-  }
-
-  clearScreen('#000000');
-
   class LispRuntimeError extends Error {
     constructor(message, line = 0, col = 0) {
       super(message);
@@ -179,7 +139,6 @@
   }
 
   let activeAppendOutput = null;
-  let animationFrameId = null;
 
   function makeEnv(bindings = {}, parent = null) {
     return { bindings, parent };
@@ -212,6 +171,7 @@
     return val;
   }
 
+  // --- BASE ENVIRONMENT ---
   const baseEnv = makeEnv({
     '+': (...args) => args.reduce((acc, curr) => acc + curr, 0),
     '-': (...args) => {
@@ -231,54 +191,14 @@
     'SGN': (a) => a < 0 ? -1 : (a > 0 ? 1 : 0),
     'MAX': (...args) => Math.max(...args),
     'MIN': (...args) => Math.min(...args),
-    'RANDOM': () => Math.random(),
-    'TRUNC': (a) => Math.trunc(a),
-    'FLOOR': (a) => Math.floor(a),
-    'CEIL': (a) => Math.ceil(a),
-    'ROUND': (a) => Math.round(a),
+    
+    // Bitwise Operators
     'BITAND': (a, b) => a & b,
     'BITOR': (a, b) => a | b,
     'BITXOR': (a, b) => a ^ b,
     'BITNOT': (a) => ~a,
     'SHL': (a, b) => a << b,
     'SHR': (a, b) => a >> b,
-
-    'COLOR': (r, g, b, a = 255) => {
-      const rc = Math.max(0, Math.min(255, Math.floor(r)));
-      const gc = Math.max(0, Math.min(255, Math.floor(g)));
-      const bc = Math.max(0, Math.min(255, Math.floor(b)));
-      const ac = Math.max(0, Math.min(1, a / 255));
-      return ['COLOR', rc, gc, bc, a];
-    },
-
-    'CLS': (color) => {
-      let colStr = '#000000';
-      if (color) {
-        if (Array.isArray(color) && color[0] === 'COLOR') {
-          const [, r, g, b, a = 255] = color;
-          colStr = `rgba(${r}, ${g}, ${b}, ${Math.max(0, Math.min(1, a / 255))})`;
-        } else {
-          colStr = lispToString(color);
-          if (colStr.startsWith('"') && colStr.endsWith('"')) colStr = colStr.slice(1, -1);
-        }
-      }
-      clearScreen(colStr);
-      return 'T';
-    },
-
-    'PSET': (x, y, color) => {
-      let colStr = '#ffffff';
-      if (Array.isArray(color) && color[0] === 'COLOR') {
-        const [, r, g, b, a = 255] = color;
-        colStr = `rgba(${r}, ${g}, ${b}, ${Math.max(0, Math.min(1, a / 255))})`;
-      } else if (color) {
-        colStr = lispToString(color);
-        if (colStr.startsWith('"') && colStr.endsWith('"')) colStr = colStr.slice(1, -1);
-      }
-      pset(x, y, colStr);
-      return 'T';
-    },
-    'PGET': (x, y) => pget(x, y),
 
     '<': (a, b) => a < b ? 'T' : 'NIL',
     '>': (a, b) => a > b ? 'T' : 'NIL',
@@ -336,7 +256,9 @@
   });
 
   class TailCall {
-    constructor(thunk) { this.thunk = thunk; }
+    constructor(thunk) {
+      this.thunk = thunk;
+    }
   }
 
   function trampoline(result) {
@@ -346,25 +268,168 @@
     return result;
   }
 
-  function callClosure(fnVal, evaluatedArgs, line, col) {
-    if (typeof fnVal === 'function') {
-      return fnVal(...evaluatedArgs);
+  function evalQuasiquote(expr, env) {
+    if (!Array.isArray(expr)) return expr;
+    const [op] = expr;
+    if (op === 'UNQUOTE') return evaluate(expr[1], env);
+
+    const result = [];
+    for (let i = 0; i < expr.length; i++) {
+      const item = expr[i];
+      if (Array.isArray(item) && item[0] === 'UNQUOTE-SPLICING') {
+        const splicedVal = evaluate(item[1], env);
+        if (Array.isArray(splicedVal)) {
+          result.push(...splicedVal);
+        } else {
+          throw new LispRuntimeError(",@ requires a list to splice", expr._line, expr._col);
+        }
+      } else {
+        result.push(evaluateQuasiquote(item, env));
+      }
     }
-    if (Array.isArray(fnVal)) {
-      if (fnVal[0] === 'CLOSURE') {
-        const [, closureEnv, params, body] = fnVal;
+    return result;
+  }
+
+  function evaluateQuasiquote(expr, env) {
+    if (!Array.isArray(expr)) return expr;
+    if (expr[0] === 'UNQUOTE') return evaluate(expr[1], env);
+    if (expr[0] === 'QUASIQUOTE') return ['QUASIQUOTE', expr[1]];
+    return evalQuasiquote(expr, env);
+  }
+
+  function evaluate(expr, env) {
+    const line = (expr && (Array.isArray(expr) || typeof expr === 'string')) ? (expr._line || 0) : 0;
+    const col = (expr && (Array.isArray(expr) || typeof expr === 'string')) ? (expr._col || 0) : 0;
+
+    if (typeof expr === 'number') return expr;
+    if (expr === 'T' || expr === 'NIL') return expr;
+    if (typeof expr === 'string' && expr.startsWith('"')) return expr;
+
+    if (typeof expr === 'string') {
+      return assoc(env, expr, line, col);
+    }
+
+    if (Array.isArray(expr)) {
+      const [op, ...args] = expr;
+
+      if (op === 'QUOTE') return args[0];
+      if (op === 'QUASIQUOTE') return evaluateQuasiquote(args[0], env);
+
+      if (op === 'TRY') {
+        const [bodyExpr, catchClause] = args;
+        try {
+          return trampoline(evaluate(bodyExpr, env));
+        } catch (err) {
+          if (catchClause && catchClause[0] === 'CATCH') {
+            const [, errVar, catchBody] = catchClause;
+            const catchBindings = {};
+            catchBindings[errVar] = err.message || String(err);
+            const catchEnv = makeEnv(catchBindings, env);
+            return trampoline(evaluate(catchBody, catchEnv));
+          }
+          throw err;
+        }
+      }
+
+      if (op === 'NOT') {
+        const val = evaluate(args[0], env);
+        return (val === 'NIL') ? 'T' : 'NIL';
+      }
+
+      if (op === 'AND') {
+        let res = 'T';
+        for (const arg of args) {
+          res = evaluate(arg, env);
+          if (res === 'NIL') return 'NIL';
+        }
+        return res;
+      }
+
+      if (op === 'OR') {
+        for (const arg of args) {
+          const res = evaluate(arg, env);
+          if (res !== 'NIL') return res;
+        }
+        return 'NIL';
+      }
+
+      if (op === 'COND') {
+        for (const clause of args) {
+          const [condition, result] = clause;
+          if (evaluate(condition, env) !== 'NIL') {
+            return evaluate(result, env);
+          }
+        }
+        return 'NIL';
+      }
+
+      if (op === 'LABEL') return expr;
+
+      if (op === 'LAMBDA') {
+        return ['CLOSURE', env, args[0], args[1]]; 
+      }
+
+      if (op === 'DEFMACRO') {
+        const [name, params, body] = args;
+        return defineVar(env, name, ['MACRO', env, params, body]);
+      }
+
+      if (op === 'BEGIN') {
+        let lastResult = 'NIL';
+        for (let i = 0; i < args.length; i++) {
+          if (i === args.length - 1) {
+            return evaluate(args[i], env);
+          }
+          lastResult = evaluate(args[i], env);
+        }
+        return lastResult;
+      }
+
+      if (op === 'DEFINE') {
+        const [name, valExpr] = args;
+        const evaluatedVal = evaluate(valExpr, env);
+        return defineVar(env, name, evaluatedVal);
+      }
+
+      if (op === 'SET!') {
+        const [name, valExpr] = args;
+        const evaluatedVal = evaluate(valExpr, env);
+        return setVar(env, name, evaluatedVal, line, col);
+      }
+
+      const evaluatedOp = evaluate(op, env);
+
+      if (Array.isArray(evaluatedOp) && evaluatedOp[0] === 'MACRO') {
+        const [, macroEnv, params, body] = evaluatedOp;
         const callBindings = {};
         for (let i = 0; i < params.length; i++) {
-          callBindings[params[i]] = evaluatedArgs[i];
+          callBindings[params[i]] = args[i];
         }
-        const callEnv = makeEnv(callBindings, closureEnv);
-        return new TailCall(() => evaluate(body, callEnv));
+        const callEnv = makeEnv(callBindings, macroEnv);
+        const expandedCode = evaluate(body, callEnv);
+        return new TailCall(() => evaluate(expandedCode, env));
       }
-      if (fnVal[0] === 'LABEL') {
-        const [, name, lambdaExpr] = fnVal;
+
+      const evaluatedArgs = args.map(arg => evaluate(arg, env));
+
+      if (typeof evaluatedOp === 'function') {
+        try {
+          return evaluatedOp(...evaluatedArgs);
+        } catch (jsErr) {
+          if (jsErr instanceof LispRuntimeError) {
+            if (!jsErr.line) { jsErr.line = line; jsErr.col = col; }
+            throw jsErr;
+          }
+          throw new LispRuntimeError(jsErr.message, line, col);
+        }
+      }
+
+      if (Array.isArray(evaluatedOp) && evaluatedOp[0] === 'LABEL') {
+        const [, name, lambdaExpr] = evaluatedOp;
         const recursiveBindings = {};
-        recursiveBindings[name] = fnVal;
-        const recursiveEnv = makeEnv(recursiveBindings, fnVal[1] || baseEnv);
+        recursiveBindings[name] = evaluatedOp;
+        const recursiveEnv = makeEnv(recursiveBindings, env);
+        
         if (lambdaExpr[0] === 'LAMBDA') {
           const [, params, body] = lambdaExpr;
           const callBindings = {};
@@ -375,73 +440,20 @@
           return new TailCall(() => evaluate(body, callEnv));
         }
       }
+
+      if (Array.isArray(evaluatedOp) && evaluatedOp[0] === 'CLOSURE') {
+        const [, closureEnv, params, body] = evaluatedOp;
+        const callBindings = {};
+        for (let i = 0; i < params.length; i++) {
+          callBindings[params[i]] = evaluatedArgs[i];
+        }
+        const callEnv = makeEnv(callBindings, closureEnv);
+        return new TailCall(() => evaluate(body, callEnv));
+      }
+
+      throw new LispRuntimeError(`Not a function or keyword: ${op}`, line, col);
     }
-    throw new LispRuntimeError(`Not a function: ${lispToString(fnVal)}`, line, col);
-  }
 
-  function evaluate(expr, env) {
-    const line = (expr && (Array.isArray(expr) || typeof expr === 'string')) ? (expr._line || 0) : 0;
-    const col = (expr && (Array.isArray(expr) || typeof expr === 'string')) ? (expr._col || 0) : 0;
-
-    if (typeof expr === 'number') return expr;
-    if (expr === 'T' || expr === 'NIL') return expr;
-    if (typeof expr === 'string' && expr.startsWith('"')) return expr;
-    if (typeof expr === 'string') return assoc(env, expr, line, col);
-
-    if (Array.isArray(expr)) {
-      const [op, ...args] = expr;
-
-      if (op === 'QUOTE') return args[0];
-      if (op === 'NOT') return evaluate(args[0], env) === 'NIL' ? 'T' : 'NIL';
-      if (op === 'AND') {
-        let res = 'T';
-        for (const arg of args) {
-          res = evaluate(arg, env);
-          if (res === 'NIL') return 'NIL';
-        }
-        return res;
-      }
-      if (op === 'OR') {
-        for (const arg of args) {
-          const res = evaluate(arg, env);
-          if (res !== 'NIL') return res;
-        }
-        return 'NIL';
-      }
-      if (op === 'COND') {
-        for (const clause of args) {
-          const [condition, result] = clause;
-          if (evaluate(condition, env) !== 'NIL') return evaluate(result, env);
-        }
-        return 'NIL';
-      }
-      if (op === 'LABEL') return expr;
-      if (op === 'LAMBDA') return ['CLOSURE', env, args[0], args[1]];
-      if (op === 'BEGIN') {
-        let lastResult = 'NIL';
-        for (let i = 0; i < args.length; i++) {
-          if (i === args.length - 1) return evaluate(args[i], env);
-          lastResult = evaluate(args[i], env);
-        }
-        return lastResult;
-      }
-      if (op === 'DEFINE') return defineVar(env, args[0], evaluate(args[1], env));
-      if (op === 'SET!') return setVar(env, args[0], evaluate(args[1], env), line, col);
-
-      const evaluatedOp = evaluate(op, env);
-      const evaluatedArgs = args.map(arg => evaluate(arg, env));
-
-      try {
-        const res = callClosure(evaluatedOp, evaluatedArgs, line, col);
-        return res instanceof TailCall ? trampoline(res) : res;
-      } catch (jsErr) {
-        if (jsErr instanceof LispRuntimeError) {
-          if (!jsErr.line) { jsErr.line = line; jsErr.col = col; }
-          throw jsErr;
-        }
-        throw new LispRuntimeError(jsErr.message, line, col);
-      }
-    }
     throw new LispRuntimeError(`Unknown expression syntax: ${JSON.stringify(expr)}`, line, col);
   }
 
@@ -467,23 +479,41 @@
       const vals = bindings.map(b => expandMacros(b[1]));
       return annotate([['LAMBDA', vars, expandMacros(body)], ...vals], line, col);
     }
+
+    if (macroOp === 'LETREC') {
+      const bindings = args[0];
+      const body = args[1];
+      let result = expandMacros(body);
+      for (let i = bindings.length - 1; i >= 0; i--) {
+        const [name, valExpr] = bindings[i];
+        result = annotate([['LAMBDA', [name], result], ['LABEL', name, expandMacros(valExpr)]], line, col);
+      }
+      return result;
+    }
+
     return annotate(expr.map(expandMacros), line, col);
   }
 
   function parseAllLispExpressions(text) {
     const cleanText = text.replace(/;.*$/gm, '');
     const lines = cleanText.split('\n');
+
     const regex = /("[^"\\]*(?:\\.[^"\\]*)*"|,\@|`|,|'|\(|\)|[^\s()]+)/g;
     const tokens = [];
 
     lines.forEach((line, idx) => {
       let match;
       while ((match = regex.exec(line)) !== null) {
-        tokens.push({ value: match[0], line: idx + 1, col: match.index + 1 });
+        tokens.push({
+          value: match[0],
+          line: idx + 1,
+          col: match.index + 1
+        });
       }
     });
 
     if (tokens.length === 0) return [];
+
     let tokenIndex = 0;
 
     function parseTokens() {
@@ -494,14 +524,24 @@
       const col = tokObj.col;
 
       let parsed;
-      if (token === "'") {
-        parsed = ['QUOTE', parseTokens()];
+      if (token === '`') {
+        const inner = parseTokens();
+        parsed = ['QUASIQUOTE', inner];
+      } else if (token === ',') {
+        const inner = parseTokens();
+        parsed = ['UNQUOTE', inner];
+      } else if (token === ',@') {
+        const inner = parseTokens();
+        parsed = ['UNQUOTE-SPLICING', inner];
+      } else if (token === "'") {
+        const inner = parseTokens();
+        parsed = ['QUOTE', inner];
       } else if (token === '(') {
         const list = [];
         while (tokenIndex < tokens.length && tokens[tokenIndex].value !== ')') {
           list.push(parseTokens());
         }
-        tokenIndex++;
+        tokenIndex++; // skip ')'
         parsed = list;
       } else if (token === ')') {
         return null;
@@ -511,6 +551,7 @@
         else if (token.startsWith('"') && token.endsWith('"')) parsed = token;
         else parsed = isNaN(token) ? token : Number(token);
       }
+
       return annotate(parsed, line, col);
     }
 
@@ -519,6 +560,7 @@
       const expr = parseTokens();
       if (expr !== null) expressions.push(expr);
     }
+
     return expressions;
   }
 
@@ -526,37 +568,29 @@
   const codeInput = document.getElementById('codeInput');
 
   function logToConsole(text, type) {
-    if (type === 'output-err') console.error(text);
-    else if (type === 'output-print') console.info(text);
-    else console.log(text);
+    if (type === 'output-err') {
+      console.error(text);
+    } else if (type === 'output-print') {
+      console.info(text);
+    } else if (type === 'output-system') {
+      console.debug(text);
+    } else {
+      console.log(text);
+    }
   }
+
   activeAppendOutput = logToConsole;
 
-  function stopProgram() {
-    if (animationFrameId) {
-      cancelAnimationFrame(animationFrameId);
-      animationFrameId = null;
-    }
-    runBtn.textContent = 'RUN';
-    runBtn.classList.remove('running');
-  }
-
   runBtn.addEventListener('click', function() {
-    if (animationFrameId) {
-      stopProgram();
-      console.log("--- Program Stopped ---");
-      return;
-    }
-
     console.clear();
     console.log("--- Running SectorLISP Program ---");
-    runBtn.textContent = 'STOP';
-    runBtn.classList.add('running');
     
+    const codeText = codeInput.value;
+
     try {
-      const expressions = parseAllLispExpressions(codeInput.value);
+      const expressions = parseAllLispExpressions(codeText);
       if (expressions.length === 0) {
-        stopProgram();
+        logToConsole("No expressions found.", "output-system");
         return;
       }
 
@@ -564,8 +598,10 @@
 
       for (const expr of expressions) {
         try {
-          const rawResult = evaluate(expandMacros(expr), globalEnv);
-          trampoline(rawResult);
+          const expandedExpr = expandMacros(expr);
+          const rawResult = evaluate(expandedExpr, globalEnv);
+          const result = trampoline(rawResult);
+          logToConsole(`=> ${lispToString(result)}`, "output-ok");
         } catch (evalErr) {
           if (evalErr instanceof LispRuntimeError) {
             const loc = evalErr.line > 0 ? ` [Line ${evalErr.line}, Col ${evalErr.col}]` : '';
@@ -573,57 +609,13 @@
           } else {
             logToConsole(`Error: ${evalErr.message}`, "output-err");
           }
-          stopProgram();
-          return;
         }
-      }
-
-      let setupFn = null;
-      try { setupFn = assoc(globalEnv, 'SETUP', 0, 0); } catch (e) {}
-
-      if (setupFn) {
-        try {
-          trampoline(callClosure(setupFn, [], 0, 0));
-        } catch (setupErr) {
-          if (setupErr instanceof LispRuntimeError) {
-            const loc = setupErr.line > 0 ? ` [Line ${setupErr.line}, Col ${setupErr.col}]` : '';
-            logToConsole(`Setup Error${loc}: ${setupErr.message}`, "output-err");
-          } else {
-            logToConsole(`Setup Error: ${setupErr.message}`, "output-err");
-          }
-          stopProgram();
-          return;
-        }
-      }
-
-      let updateFn = null;
-      try { updateFn = assoc(globalEnv, 'UPDATE', 0, 0); } catch (e) {}
-
-      if (updateFn) {
-        function loop() {
-          try {
-            trampoline(callClosure(updateFn, [], 0, 0));
-          } catch (updateErr) {
-            if (updateErr instanceof LispRuntimeError) {
-              const loc = updateErr.line > 0 ? ` [Line ${updateErr.line}, Col ${updateErr.col}]` : '';
-              logToConsole(`Update Error${loc}: ${updateErr.message}`, "output-err");
-            } else {
-              logToConsole(`Update Error: ${updateErr.message}`, "output-err");
-            }
-            stopProgram();
-            return;
-          }
-          animationFrameId = requestAnimationFrame(loop);
-        }
-        animationFrameId = requestAnimationFrame(loop);
-      } else {
-        stopProgram();
       }
     } catch (parseErr) {
       logToConsole(`Parsing Error: ${parseErr.message}`, "output-err");
-      stopProgram();
     }
   });
 </script>
+
 </body>
 </html>

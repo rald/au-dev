@@ -1,0 +1,275 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SectorLISP JS IDE with Closures</title>
+  <style>
+    body {
+      background-color: #0d1117;
+      color: #c9d1d9;
+      font-family: 'Courier New', Courier, monospace;
+      margin: 0;
+      padding: 20px;
+      display: flex;
+      flex-direction: column;
+      height: 100vh;
+      box-sizing: border-box;
+    }
+    h2 {
+      margin-top: 0;
+      color: #58a6ff;
+      border-bottom: 1px solid #30363d;
+      padding-bottom: 10px;
+    }
+    .container {
+      display: flex;
+      gap: 20px;
+      flex: 1;
+      min-height: 0;
+    }
+    .pane {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+    }
+    label {
+      margin-bottom: 8px;
+      color: #8b949e;
+      font-weight: bold;
+    }
+    textarea, #output {
+      flex: 1;
+      background-color: #161b22;
+      border: 1px solid #30363d;
+      border-radius: 6px;
+      padding: 12px;
+      color: #c9d1d9;
+      font-family: 'Courier New', Courier, monospace;
+      font-size: 14px;
+      resize: none;
+      box-sizing: border-box;
+      outline: none;
+    }
+    textarea:focus, #output:focus {
+      border-color: #58a6ff;
+    }
+    #output {
+      overflow-y: auto;
+      white-space: pre-wrap;
+      word-break: break-all;
+    }
+    .controls {
+      margin-top: 15px;
+      display: flex;
+      justify-content: flex-end;
+    }
+    button {
+      background-color: #238636;
+      color: white;
+      border: none;
+      border-radius: 6px;
+      padding: 10px 20px;
+      font-family: 'Courier New', Courier, monospace;
+      font-size: 16px;
+      font-weight: bold;
+      cursor: pointer;
+      transition: background-color 0.2s;
+    }
+    button:hover {
+      background-color: #2ea043;
+    }
+    .output-ok { color: #7ee787; margin-bottom: 6px; }
+    .output-err { color: #ff7b72; margin-bottom: 6px; }
+    .output-system { color: #8b949e; font-style: italic; margin-bottom: 6px; }
+  </style>
+</head>
+<body>
+
+  <h2>SectorLISP JS IDE with Lexical Closures</h2>
+  
+  <div class="container">
+    <div class="pane">
+      <label for="codeInput">Pure Lisp Expression (Closure Example):</label>
+      <textarea id="codeInput" placeholder=";; Create a closure (adder where x = 10, then add 5):
+(((LAMBDA (x) 
+    (LAMBDA (y) (+ x y))) 
+  10) 
+ 5)">;; Create a closure (adder where x = 10, then add 5):
+(((LAMBDA (x) 
+    (LAMBDA (y) (+ x y))) 
+  10) 
+ 5)</textarea>
+    </div>
+
+    <div class="pane">
+      <label for="output">Execution Output:</label>
+      <div id="output">Click "Run Code" to evaluate your expression.</div>
+    </div>
+  </div>
+
+  <div class="controls">
+    <button id="runBtn">Run Code</button>
+  </div>
+
+<script>
+  // --- SECTOR-LISP ENGINE WITH LEXICAL CLOSURES ---
+
+  const baseEnv = [
+    ['+', (a, b) => a + b],
+    ['-', (a, b) => a - b],
+    ['*', (a, b) => a * b],
+    ['EQ', (a, b) => (a === b || (String(a) === 'NIL' && String(b) === 'NIL')) ? 'T' : 'NIL'],
+    ['ATOM', (x) => (!Array.isArray(x) || x === 'NIL' || x.length === 0) ? 'T' : 'NIL'],
+    ['CAR', (x) => x[0]],
+    ['CDR', (x) => x.slice(1)],
+    ['CONS', (x, y) => [x, ...y]],
+    ['T', 'T'],
+    ['NIL', 'NIL']
+  ];
+
+  function assoc(id, e) {
+    if (e === 'NIL' || e.length === 0) {
+      throw new Error(`Unbound symbol: ${id}`);
+    }
+    const pair = e[0];
+    if (id === pair[0]) return pair[1];
+    return assoc(id, e.slice(1));
+  }
+
+  function evaluate(expr, env) {
+    if (typeof expr === 'number') return expr;
+    if (expr === 'T' || expr === 'NIL') return expr;
+
+    if (typeof expr === 'string') {
+      return assoc(expr, env);
+    }
+
+    if (Array.isArray(expr)) {
+      const [op, ...args] = expr;
+
+      // QUOTE
+      if (op === 'QUOTE') return args[0];
+
+      // COND
+      if (op === 'COND') {
+        for (const clause of args) {
+          const [condition, result] = clause;
+          if (evaluate(condition, env) !== 'NIL') {
+            return evaluate(result, env);
+          }
+        }
+        return 'NIL';
+      }
+
+      // LABEL definition
+      if (op === 'LABEL') {
+        return expr;
+      }
+
+      // LAMBDA creates a Lexical Closure (captures current environment)
+      if (op === 'LAMBDA') {
+        return ['CLOSURE', env, args[0], args[1]]; 
+      }
+
+      // Function Application (Eval-Apply Cycle)
+      const evaluatedOp = evaluate(op, env);
+      const evaluatedArgs = args.map(arg => evaluate(arg, env));
+
+      // 1. Native Primitives
+      if (typeof evaluatedOp === 'function') {
+        return evaluatedOp(...evaluatedArgs);
+      }
+
+      // 2. User-Defined LABEL Application
+      if (Array.isArray(evaluatedOp) && evaluatedOp[0] === 'LABEL') {
+        const [, name, lambdaExpr] = evaluatedOp;
+        const recursiveEnv = [[name, evaluatedOp], ...env];
+        
+        if (lambdaExpr[0] === 'LAMBDA') {
+          const [, params, body] = lambdaExpr;
+          let callEnv = recursiveEnv;
+          for (let i = 0; i < params.length; i++) {
+            callEnv = [[params[i], evaluatedArgs[i]], ...callEnv];
+          }
+          return evaluate(body, callEnv);
+        }
+      }
+
+      // 3. User-Defined CLOSURE Application (Lexical Scoping)
+      if (Array.isArray(evaluatedOp) && evaluatedOp[0] === 'CLOSURE') {
+        const [, closureEnv, params, body] = evaluatedOp;
+        let callEnv = closureEnv; // Bind variables against definition environment
+        
+        for (let i = 0; i < params.length; i++) {
+          callEnv = [[params[i], evaluatedArgs[i]], ...callEnv];
+        }
+        return evaluate(body, callEnv);
+      }
+
+      throw new Error(`Not a function or keyword: ${op}`);
+    }
+
+    throw new Error(`Unknown expression syntax: ${JSON.stringify(expr)}`);
+  }
+
+  function parseLisp(text) {
+    const cleanText = text.replace(/;.*$/gm, '').trim();
+    if (!cleanText) return null;
+
+    const tokens = cleanText.replace(/\(/g, ' ( ').replace(/\)/g, ' ) ').trim().split(/\s+/);
+    let index = 0;
+
+    function parseTokens() {
+      if (index >= tokens.length) return null;
+      const token = tokens[index++];
+      if (token === '(') {
+        const list = [];
+        while (index < tokens.length && tokens[index] !== ')') {
+          list.push(parseTokens());
+        }
+        index++; 
+        return list;
+      } else if (token === ')') {
+        return null;
+      } else {
+        if (token.toUpperCase() === 'T') return 'T';
+        if (token.toUpperCase() === 'NIL') return 'NIL';
+        return isNaN(token) ? token : Number(token);
+      }
+    }
+    return parseTokens();
+  }
+
+  // UI Integration
+  const runBtn = document.getElementById('runBtn');
+  const codeInput = document.getElementById('codeInput');
+  const outputDiv = document.getElementById('output');
+
+  runBtn.addEventListener('click', function() {
+    outputDiv.innerHTML = ''; 
+    const codeText = codeInput.value;
+
+    try {
+      const parsedExpr = parseLisp(codeText);
+      if (!parsedExpr) {
+        appendOutput("No expression found.", "output-system");
+        return;
+      }
+      const result = evaluate(parsedExpr, baseEnv);
+      appendOutput(`=> ${JSON.stringify(result)}`, "output-ok");
+    } catch (err) {
+      appendOutput(`Error: ${err.message}`, "output-err");
+    }
+  });
+
+  function appendOutput(text, className) {
+    const div = document.createElement('div');
+    div.className = className;
+    div.textContent = text;
+    outputDiv.appendChild(div);
+  }
+</script>
+
+</body>
+</html>

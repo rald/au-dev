@@ -108,11 +108,12 @@
 ))
 
 (DEFINE SETUP (LAMBDA ()
-  (CLS (COLOR 0 0 0))
+  (CLEAR-SCREEN (COLOR 0 0 0 255))
 ))
 
 (DEFINE UPDATE (LAMBDA ()
-  (PSET (RND 128) (RND 128) (COLOR (RND 256) (RND 256) (RND 256)))
+  (PSET (RND 128) (RND 128) (COLOR (RND 256) (RND 256) (RND 256) 255))
+  (REFRESH-CANVAS)
 ))
       </textarea>
     </div>
@@ -248,29 +249,20 @@
       const gc = Math.max(0, Math.min(255, Math.floor(g)));
       const bc = Math.max(0, Math.min(255, Math.floor(b)));
       const ac = Math.max(0, Math.min(1, a / 255));
-      return ['COLOR', rc, gc, bc, a];
+      return `rgba(${rc}, ${gc}, ${bc}, ${ac})`;
     },
 
-    'CLS': (color) => {
-      let colStr = '#000000';
-      if (color) {
-        if (Array.isArray(color) && color[0] === 'COLOR') {
-          const [, r, g, b, a = 255] = color;
-          colStr = `rgba(${r}, ${g}, ${b}, ${Math.max(0, Math.min(1, a / 255))})`;
-        } else {
-          colStr = lispToString(color);
-          if (colStr.startsWith('"') && colStr.endsWith('"')) colStr = colStr.slice(1, -1);
-        }
-      }
+    'CLEAR-SCREEN': (color) => {
+      let colStr = color ? lispToString(color) : '#000000';
+      if (colStr.startsWith('"') && colStr.endsWith('"')) colStr = colStr.slice(1, -1);
       clearScreen(colStr);
       return 'T';
     },
-
     'PSET': (x, y, color) => {
       let colStr = '#ffffff';
       if (Array.isArray(color) && color[0] === 'COLOR') {
         const [, r, g, b, a = 255] = color;
-        colStr = `rgba(${r}, ${g}, ${b}, ${Math.max(0, Math.min(1, a / 255))})`;
+        colStr = baseEnv.bindings['COLOR'](r, g, b, a);
       } else if (color) {
         colStr = lispToString(color);
         if (colStr.startsWith('"') && colStr.endsWith('"')) colStr = colStr.slice(1, -1);
@@ -279,6 +271,7 @@
       return 'T';
     },
     'PGET': (x, y) => pget(x, y),
+    'REFRESH-CANVAS': () => 'T',
 
     '<': (a, b) => a < b ? 'T' : 'NIL',
     '>': (a, b) => a > b ? 'T' : 'NIL',
@@ -542,10 +535,10 @@
   }
 
   runBtn.addEventListener('click', function() {
+    // Always stop any currently active execution loop first to reload fresh code
     if (animationFrameId) {
       stopProgram();
-      console.log("--- Program Stopped ---");
-      return;
+      console.log("--- Program Stopped & Reloading ---");
     }
 
     console.clear();
@@ -578,6 +571,7 @@
         }
       }
 
+      // Execute SETUP function if defined
       let setupFn = null;
       try { setupFn = assoc(globalEnv, 'SETUP', 0, 0); } catch (e) {}
 
@@ -596,6 +590,7 @@
         }
       }
 
+      // Execute UPDATE function loop if defined
       let updateFn = null;
       try { updateFn = assoc(globalEnv, 'UPDATE', 0, 0); } catch (e) {}
 

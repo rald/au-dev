@@ -107,12 +107,16 @@
   (FLOOR (* (RANDOM) N))
 ))
 
-(DEFINE SETUP (LAMBDA ()
-  (CLS (COLOR 0 0 0))
-))
+;; Test RND printing
+(PRINT (RND 128))
 
+;; Clear screen once at startup
+(CLEAR-SCREEN (COLOR 0 0 0 255))
+
+;; Main animation frame loop function recognized by the host runner
 (DEFINE UPDATE (LAMBDA ()
-  (PSET (RND 128) (RND 128) (COLOR (RND 256) (RND 256) (RND 256)))
+  (PSET (RND 128) (RND 128) (COLOR (RND 256) (RND 256) (RND 256) 255))
+  (REFRESH-CANVAS)
 ))
       </textarea>
     </div>
@@ -248,29 +252,20 @@
       const gc = Math.max(0, Math.min(255, Math.floor(g)));
       const bc = Math.max(0, Math.min(255, Math.floor(b)));
       const ac = Math.max(0, Math.min(1, a / 255));
-      return ['COLOR', rc, gc, bc, a];
+      return `rgba(${rc}, ${gc}, ${bc}, ${ac})`;
     },
 
-    'CLS': (color) => {
-      let colStr = '#000000';
-      if (color) {
-        if (Array.isArray(color) && color[0] === 'COLOR') {
-          const [, r, g, b, a = 255] = color;
-          colStr = `rgba(${r}, ${g}, ${b}, ${Math.max(0, Math.min(1, a / 255))})`;
-        } else {
-          colStr = lispToString(color);
-          if (colStr.startsWith('"') && colStr.endsWith('"')) colStr = colStr.slice(1, -1);
-        }
-      }
+    'CLEAR-SCREEN': (color) => {
+      let colStr = color ? lispToString(color) : '#000000';
+      if (colStr.startsWith('"') && colStr.endsWith('"')) colStr = colStr.slice(1, -1);
       clearScreen(colStr);
       return 'T';
     },
-
     'PSET': (x, y, color) => {
       let colStr = '#ffffff';
       if (Array.isArray(color) && color[0] === 'COLOR') {
         const [, r, g, b, a = 255] = color;
-        colStr = `rgba(${r}, ${g}, ${b}, ${Math.max(0, Math.min(1, a / 255))})`;
+        colStr = baseEnv.bindings['COLOR'](r, g, b, a);
       } else if (color) {
         colStr = lispToString(color);
         if (colStr.startsWith('"') && colStr.endsWith('"')) colStr = colStr.slice(1, -1);
@@ -279,6 +274,7 @@
       return 'T';
     },
     'PGET': (x, y) => pget(x, y),
+    'REFRESH-CANVAS': () => 'T',
 
     '<': (a, b) => a < b ? 'T' : 'NIL',
     '>': (a, b) => a > b ? 'T' : 'NIL',
@@ -433,6 +429,7 @@
 
       try {
         const res = callClosure(evaluatedOp, evaluatedArgs, line, col);
+        // Ensure TailCalls or raw primitives from helper calls are fully unpacked/trampolined
         return res instanceof TailCall ? trampoline(res) : res;
       } catch (jsErr) {
         if (jsErr instanceof LispRuntimeError) {
@@ -572,24 +569,6 @@
             logToConsole(`Error${loc}: ${evalErr.message}`, "output-err");
           } else {
             logToConsole(`Error: ${evalErr.message}`, "output-err");
-          }
-          stopProgram();
-          return;
-        }
-      }
-
-      let setupFn = null;
-      try { setupFn = assoc(globalEnv, 'SETUP', 0, 0); } catch (e) {}
-
-      if (setupFn) {
-        try {
-          trampoline(callClosure(setupFn, [], 0, 0));
-        } catch (setupErr) {
-          if (setupErr instanceof LispRuntimeError) {
-            const loc = setupErr.line > 0 ? ` [Line ${setupErr.line}, Col ${setupErr.col}]` : '';
-            logToConsole(`Setup Error${loc}: ${setupErr.message}`, "output-err");
-          } else {
-            logToConsole(`Setup Error: ${setupErr.message}`, "output-err");
           }
           stopProgram();
           return;
