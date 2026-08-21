@@ -1,0 +1,45 @@
+;; Sweetie-16 Palette Definition with Candy Labels
+;; Original Palette by GrafxKid
+
+(define sweetie-16 
+  (list
+    (color 26  28  44)   ;  0: Dark Licorice (#1a1c2c)
+    (color 93  39  93)   ;  1: Plum Chew (#5d275d)
+    (color 177 62  83)   ;  2: Cherry Drop (#b13e53)
+    (color 239 125 87)   ;  3: Tangerine Pop (#ef7d57)
+    (color 255 205 117)  ;  4: Butterscotch Hard Candy (#ffcd75)
+    (color 167 240 112)  ;  5: Sour Apple Gummy (#a7f070)
+    (color 56  183 100)  ;  6: Mint Jelly Bean (#38b764)
+    (color 37  113 121)  ;  7: Teal Taffy (#257179)
+    (color 41  54  111)  ;  8: Blue Raspberry Jawbreaker (#29366f)
+    (color 59  93  201)  ;  9: Bubblegum Pop (#3b5dc9)
+    (color 65  166 246)  ; 10: Cotton Candy Blue (#41a6f6)
+    (color 115 239 247)  ; 11: Frosty Soda Fizz (#73eff7)
+    (color 244 244 244)  ; 12: Sugar Frosting (#f4f4f4)
+    (color 148 176 194)  ; 13: Silver Mint Wrapper (#94b0c2)
+    (color 86  108 134)  ; 14: Blueberry Rock Candy (#566c86)
+    (color 51  60  87)   ; 15: Dark Chocolate Truffle (#333c57)
+  )
+)
+
+(define sweetie (lambda (n)
+  (list-get sweetie-16 n)
+))
+
+(define rnd (lambda (n)
+  (floor (* (random) n))
+))
+
+
+(define setup (lambda () (begin
+  (cls (sweetie 0))
+)))
+
+(define update (lambda (dt) (begin  
+  (let ((c 1000))
+    (while (> c 0) (begin
+      (pset (* 128 (random)) (* 128 (random)) (color (rnd 256) (rnd 256) (rnd 256)))
+      (set! c (- c 1))      
+    ))
+  )  
+)))

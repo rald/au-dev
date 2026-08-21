@@ -393,33 +393,6 @@ const baseEnv = makeEnv({
     return 'T';
   },
 
-  'putch': (asciiCode, x, y, color) => {
-    const code = Math.floor(asciiCode);
-    const startX = Math.floor(x);
-    const startY = Math.floor(y);
-    const colorStr = parseColor(color, '#ffffff');
-    const CANVAS_WIDTH = 128;
-    const CANVAS_HEIGHT = 128;
-
-    if (startY + 8 > 0 && startY < CANVAS_HEIGHT) {
-      const charBitmap = DOS_FONT_8X8[code] || DOS_FONT_8X8[32];
-      ctx.fillStyle = colorStr;
-      for (let row = 0; row < 8; row++) {
-        const rowByte = charBitmap[row];
-        for (let col = 0; col < 8; col++) {
-          if ((rowByte & (1 << (7 - col))) !== 0) {
-            const px = startX + col;
-            const py = startY + row;
-            if (px >= 0 && px < CANVAS_WIDTH && py >= 0 && py < CANVAS_HEIGHT) {
-              ctx.fillRect(px, py, 1, 1);
-            }
-          }
-        }
-      }
-    }
-    return 'T';
-  },
-
   'line': (x1, y1, x2, y2, color) => {
     drawBresenhamLine(x1, y1, x2, y2, parseColor(color, '#ffffff'));
     return 'T';

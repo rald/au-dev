@@ -35,85 +35,30 @@ function parseColor(color, defaultStr = '#ffffff') {
   return colStr;
 }
 
-function unescapeString(str) {
-  return str
-    .replace(/\\b/g, '\b')
-    .replace(/\\r/g, '\r')
-    .replace(/\\n/g, '\n')
-    .replace(/\\t/g, '\t')
-    .replace(/\\v/g, '\v')
-    .replace(/\\"/g, '"')
-    .replace(/\\\\/g, '\\');
-}
-
 function drawText(str, x, y, colorStr) {
   let textStr = String(str);
   if (textStr.startsWith('"') && textStr.endsWith('"')) {
     textStr = unescapeString(textStr.slice(1, -1));
   }
   
-  let startX = Math.floor(x);
-  let cursorX = startX;
+  let cursorX = Math.floor(x);
   let startY = Math.floor(y);
   ctx.fillStyle = colorStr;
 
-  const CANVAS_WIDTH = 128;
-  const CANVAS_HEIGHT = 128;
-
   for (let i = 0; i < textStr.length; i++) {
     const code = textStr.charCodeAt(i);
-    
-    if (code === 8) { // Backspace (\b) -> Move cursor back one character width (8px)
-      cursorX = Math.max(startX, cursorX - 8);
-      continue;
-    }
-
-    if (code === 13) { // Carriage Return (\r) -> Reset X to startX
-      cursorX = startX;
-      continue;
-    }
-
-    if (code === 10) { // Newline (\n) -> Move down one line and reset X
-      cursorX = startX;
+    if (code === 10) { // newline character
+      cursorX = Math.floor(x);
       startY += 8;
       continue;
     }
     
-    if (code === 11) { // Vertical tab (\v) -> Move down one line without resetting X
-      startY += 8;
-      continue;
-    }
-    
-    if (code === 9) { // Tab character support (\t) -> Advance by 4 spaces (32px)
-      cursorX += 32;
-      if (cursorX + 8 > CANVAS_WIDTH) {
-        cursorX = startX;
-        startY += 8;
-      }
-      continue;
-    }
-    
-    if (cursorX + 8 > CANVAS_WIDTH) {
-      cursorX = startX;
-      startY += 8;
-    }
-    
-    if (startY >= CANVAS_HEIGHT) {
-      break;
-    }
-
-    if (startY + 8 > 0) {
-      const charBitmap = DOS_FONT_8X8[code] || DOS_FONT_8X8[32];
-      for (let row = 0; row < 8; row++) {
-        const rowByte = charBitmap[row];
-        for (let col = 0; col < 8; col++) {
-          if ((rowByte & (1 << (7 - col))) !== 0) {
-            const px = cursorX + col;
-            const py = startY + row;
-            if (px >= 0 && px < CANVAS_WIDTH && py >= 0 && py < CANVAS_HEIGHT) {
-              ctx.fillRect(px, py, 1, 1);
-            }
-          }
+    const charBitmap = DOS_FONT_8X8[code] || DOS_FONT_8X8[32]; // default to space if out of range
+    for (let row = 0; row < 8; row++) {
+      const rowByte = charBitmap[row];
+      for (let col = 0; col < 8; col++) {
+        if ((rowByte & (1 << (7 - col))) !== 0) {
+          ctx.fillRect(cursorX + col, startY + row, 1, 1);
         }
       }
     }
@@ -192,38 +137,6 @@ function drawBresenhamCircle(xc, yc, r, colorStr, filled) {
 
 clearScreen('#000000');
 
-const codeInput = document.getElementById('codeInput');
-
-// --- KEYBOARD HANDLING STATE & LISTENERS ---
-const activeKeys = new Set();
-const keyPressedEvents = [];
-const keyReleasedEvents = [];
-
-window.addEventListener('keydown', (e) => {
-  if (document.activeElement === codeInput) {
-    return;
-  }
-
-  if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', ' '].includes(e.key)) {
-    e.preventDefault();
-  }
-  const key = e.key.toLowerCase();
-  if (!activeKeys.has(key)) {
-    keyPressedEvents.push(key);
-  }
-  activeKeys.add(key);
-});
-
-window.addEventListener('keyup', (e) => {
-  if (document.activeElement === codeInput) {
-    return;
-  }
-
-  const key = e.key.toLowerCase();
-  activeKeys.delete(key);
-  keyReleasedEvents.push(key);
-});
-
 class LispRuntimeError extends Error {
   constructor(message, line = 0, col = 0) {
     super(message);
@@ -238,6 +151,14 @@ class ProgramEndSignal extends Error {
     super("Program ended");
     this.name = "ProgramEndSignal";
   }
+}
+
+function unescapeString(str) {
+  return str
+    .replace(/\\n/g, '\n')
+    .replace(/\\t/g, '\t')
+    .replace(/\\"/g, '"')
+    .replace(/\\\\/g, '\\');
 }
 
 function lispToString(val) {
@@ -255,9 +176,6 @@ let activeAppendOutput = null;
 let animationFrameId = null;
 
 function stopProgram() {
-  activeKeys.clear();
-  keyPressedEvents.length = 0;
-  keyReleasedEvents.length = 0;
   if (animationFrameId) {
     cancelAnimationFrame(animationFrameId);
     animationFrameId = null;
@@ -311,64 +229,24 @@ const baseEnv = makeEnv({
     if (args.length === 1) return 1 / args[0];
     return args.reduce((acc, curr, idx) => (idx === 0 ? curr : acc / curr), 0);
   },
-  'mod': (a, b) => a % b,
-  'abs': (a) => Math.abs(a),
-  'sgn': (a) => a < 0 ? -1 : (a > 0 ? 1 : 0),
-  'max': (...args) => Math.max(...args),
-  'min': (...args) => Math.min(...args),
-  'random': () => Math.random(),
-  'time': () => Date.now(),
-  'clock': () => performance.now(),
-  'trunc': (a) => Math.trunc(a),
-  'floor': (a) => Math.floor(a),
-  'ceil': (a) => Math.ceil(a),
-  'round': (a) => Math.round(a),
-  'bitand': (a, b) => a & b,
-  'bitor': (a, b) => a | b,
-  'bitxor': (a, b) => a ^ b,
-  'bitnot': (a) => ~a,
-  'shl': (a, b) => a << b,
-  'shr': (a, b) => a >> b,
+  'MOD': (a, b) => a % b,
+  'ABS': (a) => Math.abs(a),
+  'SGN': (a) => a < 0 ? -1 : (a > 0 ? 1 : 0),
+  'MAX': (...args) => Math.max(...args),
+  'MIN': (...args) => Math.min(...args),
+  'RANDOM': () => Math.random(),
+  'TRUNC': (a) => Math.trunc(a),
+  'FLOOR': (a) => Math.floor(a),
+  'CEIL': (a) => Math.ceil(a),
+  'ROUND': (a) => Math.round(a),
+  'BITAND': (a, b) => a & b,
+  'BITOR': (a, b) => a | b,
+  'BITXOR': (a, b) => a ^ b,
+  'BITNOT': (a) => ~a,
+  'SHL': (a, b) => a << b,
+  'SHR': (a, b) => a >> b,
 
-  // Character code primitives
-  'ord': (str) => {
-    let s = lispToString(str);
-    if (s.startsWith('"') && s.endsWith('"')) s = s.slice(1, -1);
-    return s.length > 0 ? s.charCodeAt(0) : 0;
-  },
-  'chr': (code) => {
-    const c = Math.floor(code);
-    return `"${unescapeString(String.fromCharCode(c))}"`;
-  },
-
-  // Keyboard primitives
-  'key-down?': (keyStr) => {
-    let key = lispToString(keyStr).toLowerCase();
-    if (key.startsWith('"') && key.endsWith('"')) key = key.slice(1, -1);
-    return activeKeys.has(key) ? 'T' : 'NIL';
-  },
-  'key-pressed?': (keyStr) => {
-    let key = lispToString(keyStr).toLowerCase();
-    if (key.startsWith('"') && key.endsWith('"')) key = key.slice(1, -1);
-    const index = keyPressedEvents.indexOf(key);
-    if (index !== -1) {
-      keyPressedEvents.splice(index, 1);
-      return 'T';
-    }
-    return 'NIL';
-  },
-  'key-released?': (keyStr) => {
-    let key = lispToString(keyStr).toLowerCase();
-    if (key.startsWith('"') && key.endsWith('"')) key = key.slice(1, -1);
-    const index = keyReleasedEvents.indexOf(key);
-    if (index !== -1) {
-      keyReleasedEvents.splice(index, 1);
-      return 'T';
-    }
-    return 'NIL';
-  },
-
-  'color': (r, g, b, a = 255) => {
+  'COLOR': (r, g, b, a = 255) => {
     const rc = Math.max(0, Math.min(255, Math.floor(r)));
     const gc = Math.max(0, Math.min(255, Math.floor(g)));
     const bc = Math.max(0, Math.min(255, Math.floor(b)));
@@ -376,55 +254,27 @@ const baseEnv = makeEnv({
     return ['COLOR', rc, gc, bc, a];
   },
 
-  'cls': (color) => {
+  'CLS': (color) => {
     clearScreen(parseColor(color, '#000000'));
     return 'T';
   },
 
-  'pset': (x, y, color) => {
+  'PSET': (x, y, color) => {
     pset(x, y, parseColor(color, '#ffffff'));
     return 'T';
   },
-  'pget': (x, y) => pget(x, y),
+  'PGET': (x, y) => pget(x, y),
 
-  'text': (str, x, y, color) => {
-    let textStr = lispToString(str);
-    drawText(textStr, x, y, parseColor(color, '#ffffff'));
+  'TEXT': (str, x, y, color) => {
+    drawText(str, x, y, parseColor(color, '#ffffff'));
     return 'T';
   },
 
-  'putch': (asciiCode, x, y, color) => {
-    const code = Math.floor(asciiCode);
-    const startX = Math.floor(x);
-    const startY = Math.floor(y);
-    const colorStr = parseColor(color, '#ffffff');
-    const CANVAS_WIDTH = 128;
-    const CANVAS_HEIGHT = 128;
-
-    if (startY + 8 > 0 && startY < CANVAS_HEIGHT) {
-      const charBitmap = DOS_FONT_8X8[code] || DOS_FONT_8X8[32];
-      ctx.fillStyle = colorStr;
-      for (let row = 0; row < 8; row++) {
-        const rowByte = charBitmap[row];
-        for (let col = 0; col < 8; col++) {
-          if ((rowByte & (1 << (7 - col))) !== 0) {
-            const px = startX + col;
-            const py = startY + row;
-            if (px >= 0 && px < CANVAS_WIDTH && py >= 0 && py < CANVAS_HEIGHT) {
-              ctx.fillRect(px, py, 1, 1);
-            }
-          }
-        }
-      }
-    }
-    return 'T';
-  },
-
-  'line': (x1, y1, x2, y2, color) => {
+  'LINE': (x1, y1, x2, y2, color) => {
     drawBresenhamLine(x1, y1, x2, y2, parseColor(color, '#ffffff'));
     return 'T';
   },
-  'rect': (x, y, w, h, color) => {
+  'RECT': (x, y, w, h, color) => {
     const rx = Math.floor(x);
     const ry = Math.floor(y);
     const rw = Math.floor(w);
@@ -436,21 +286,21 @@ const baseEnv = makeEnv({
     drawBresenhamLine(rx, ry + rh, rx, ry, colStr);
     return 'T';
   },
-  'frect': (x, y, w, h, color) => {
+  'FRECT': (x, y, w, h, color) => {
     ctx.fillStyle = parseColor(color, '#ffffff');
     ctx.fillRect(Math.floor(x), Math.floor(y), Math.floor(w), Math.floor(h));
     return 'T';
   },
-  'circ': (x, y, r, color) => {
+  'CIRC': (x, y, r, color) => {
     drawBresenhamCircle(x, y, r, parseColor(color, '#ffffff'), false);
     return 'T';
   },
-  'fcirc': (x, y, r, color) => {
+  'FCIRC': (x, y, r, color) => {
     drawBresenhamCircle(x, y, r, parseColor(color, '#ffffff'), true);
     return 'T';
   },
 
-  'end': () => {
+  'END': () => {
     stopProgram();
     throw new ProgramEndSignal();
   },
@@ -460,75 +310,63 @@ const baseEnv = makeEnv({
   '<=': (a, b) => a <= b ? 'T' : 'NIL',
   '>=': (a, b) => a >= b ? 'T' : 'NIL',
   '=': (a, b) => a === b ? 'T' : 'NIL',
-  'eq': (a, b) => (a === b || (String(a) === 'NIL' && String(b) === 'NIL')) ? 'T' : 'NIL',
-  'not': (x) => (x === 'NIL') ? 'T' : 'NIL',
-  'atom': (x) => (!Array.isArray(x) || x === 'NIL' || x.length === 0) ? 'T' : 'NIL',
-  'null': (x) => (x === 'NIL' || (Array.isArray(x) && x.length === 0)) ? 'T' : 'NIL',
-  'numberp': (x) => typeof x === 'number' ? 'T' : 'NIL',
-  'symbolp': (x) => (typeof x === 'string' && !x.startsWith('"')) ? 'T' : 'NIL',
-  'listp': (x) => Array.isArray(x) ? 'T' : 'NIL',
-  'car': (x) => x[0],
-  'cdr': (x) => x.slice(1),
-  'cons': (x, y) => [x, ...(Array.isArray(y) && y !== 'NIL' ? y : [y])],
-  'list': (...args) => args.length === 0 ? 'NIL' : args,
+  'EQ': (a, b) => (a === b || (String(a) === 'NIL' && String(b) === 'NIL')) ? 'T' : 'NIL',
+  'NOT': (x) => (x === 'NIL') ? 'T' : 'NIL',
+  'ATOM': (x) => (!Array.isArray(x) || x === 'NIL' || x.length === 0) ? 'T' : 'NIL',
+  'NULL': (x) => (x === 'NIL' || (Array.isArray(x) && x.length === 0)) ? 'T' : 'NIL',
+  'NUMBERP': (x) => typeof x === 'number' ? 'T' : 'NIL',
+  'SYMBOLP': (x) => (typeof x === 'string' && !x.startsWith('"')) ? 'T' : 'NIL',
+  'LISTP': (x) => Array.isArray(x) ? 'T' : 'NIL',
+  'CAR': (x) => x[0],
+  'CDR': (x) => x.slice(1),
+  'CONS': (x, y) => [x, ...(Array.isArray(y) && y !== 'NIL' ? y : [y])],
+  'LIST': (...args) => args.length === 0 ? 'NIL' : args,
   
-  'len': (x) => {
-    if (x === 'NIL' || x === null || (Array.isArray(x) && x.length === 0)) return 0;
-    if (Array.isArray(x)) return x.length;
-    if (typeof x === 'string') {
-      let str = x;
-      if (str.startsWith('"') && str.endsWith('"')) {
-        str = str.slice(1, -1);
-      }
-      return unescapeString(str).length;
-    }
-    return 0;
-  },
-
-  'list-push-back': (lst, item) => {
+  // --- ADDED LIST UTILITIES ---
+  'LIST-PUSH-BACK': (lst, item) => {
     const arr = (lst === 'NIL' || !Array.isArray(lst)) ? [] : [...lst];
     arr.push(item);
     return arr;
   },
-  'list-push-front': (lst, item) => {
+  'LIST-PUSH-FRONT': (lst, item) => {
     const arr = (lst === 'NIL' || !Array.isArray(lst)) ? [] : [...lst];
     arr.unshift(item);
     return arr;
   },
-  'list-pop-back': (lst) => {
+  'LIST-POP-BACK': (lst) => {
     if (!Array.isArray(lst) || lst.length === 0 || lst === 'NIL') return 'NIL';
     const arr = [...lst];
     arr.pop();
     return arr.length === 0 ? 'NIL' : arr;
   },
-  'list-pop-front': (lst) => {
+  'LIST-POP-FRONT': (lst) => {
     if (!Array.isArray(lst) || lst.length === 0 || lst === 'NIL') return 'NIL';
     const arr = [...lst];
     arr.shift();
     return arr.length === 0 ? 'NIL' : arr;
   },
-  'list-push-at': (lst, index, item) => {
+  'LIST-PUSH-AT': (lst, index, item) => {
     const arr = (lst === 'NIL' || !Array.isArray(lst)) ? [] : [...lst];
     arr.splice(index, 0, item);
     return arr;
   },
-  'list-pop-at': (lst, index) => {
+  'LIST-POP-AT': (lst, index) => {
     if (!Array.isArray(lst) || lst === 'NIL') return 'NIL';
     const arr = [...lst];
     arr.splice(index, 1);
     return arr.length === 0 ? 'NIL' : arr;
   },
-  'list-get': (lst, index) => {
+  'LIST-GET': (lst, index) => {
     if (!Array.isArray(lst) || lst === 'NIL' || index < 0 || index >= lst.length) return 'NIL';
     return lst[index];
   },
-  'list-set': (lst, index, item) => {
+  'LIST-SET': (lst, index, item) => {
     if (!Array.isArray(lst) || lst === 'NIL' || index < 0 || index >= lst.length) return lst;
     const arr = [...lst];
     arr[index] = item;
     return arr;
   },
-  'list-contains': function deepContains(lst, item) {
+  'LIST-CONTAINS': function deepContains(lst, item) {
     if (!Array.isArray(lst) || lst === 'NIL') return 'NIL';
     for (const elem of lst) {
       if (elem === item) return 'T';
@@ -538,12 +376,12 @@ const baseEnv = makeEnv({
     }
     return 'NIL';
   },
-  'list-index-of': (lst, item) => {
+  'LIST-INDEX-OF': (lst, item) => {
     if (!Array.isArray(lst) || lst === 'NIL') return -1;
     const idx = lst.findIndex(elem => elem === item);
     return idx !== -1 ? idx : -1;
   },
-  'list-flatten': function deepFlatten(lst) {
+  'LIST-FLATTEN': function deepFlatten(lst) {
     if (!Array.isArray(lst) || lst === 'NIL') return 'NIL';
     let result = [];
     for (const item of lst) {
@@ -558,8 +396,9 @@ const baseEnv = makeEnv({
     }
     return result.length === 0 ? 'NIL' : result;
   },
+  // ----------------------------
 
-  'append': (...lists) => {
+  'APPEND': (...lists) => {
     let result = [];
     for (const lst of lists) {
       if (lst !== 'NIL' && Array.isArray(lst)) {
@@ -568,7 +407,7 @@ const baseEnv = makeEnv({
     }
     return result.length === 0 ? 'NIL' : result;
   },
-  'equal': function deepEqual(a, b) {
+  'EQUAL': function deepEqual(a, b) {
     if (a === b) return 'T';
     if (Array.isArray(a) && Array.isArray(b)) {
       if (a.length !== b.length) return 'NIL';
@@ -579,12 +418,8 @@ const baseEnv = makeEnv({
     }
     return 'NIL';
   },
-  'error': (msg) => { throw new LispRuntimeError(msg); },
-  'clear-log': () => {
-    console.clear();
-    return 'T';
-  },
-  'print': (...args) => {
+  'ERROR': (msg) => { throw new LispRuntimeError(msg); },
+  'PRINT': (...args) => {
     const formatted = args.map(arg => {
       let str = lispToString(arg);
       if (str.startsWith('"') && str.endsWith('"')) {
@@ -628,11 +463,11 @@ function callClosure(fnVal, evaluatedArgs, line, col) {
       return new TailCall(() => evaluate(body, callEnv));
     }
     if (fnVal[0] === 'LABEL') {
-      const [, closureEnv, name, lambdaExpr] = fnVal;
+      const [, name, lambdaExpr] = fnVal;
       const recursiveBindings = {};
       recursiveBindings[name] = fnVal;
-      const recursiveEnv = makeEnv(recursiveBindings, closureEnv);
-      if (lambdaExpr[0] === 'lambda') {
+      const recursiveEnv = makeEnv(recursiveBindings, fnVal[1] || baseEnv);
+      if (lambdaExpr[0] === 'LAMBDA') {
         const [, params, body] = lambdaExpr;
         const callBindings = {};
         for (let i = 0; i < params.length; i++) {
@@ -658,9 +493,9 @@ function evaluate(expr, env) {
   if (Array.isArray(expr)) {
     const [op, ...args] = expr;
 
-    if (op === 'quote') return args[0];
-    if (op === 'not') return evaluate(args[0], env) === 'NIL' ? 'T' : 'NIL';
-    if (op === 'and') {
+    if (op === 'QUOTE') return args[0];
+    if (op === 'NOT') return evaluate(args[0], env) === 'NIL' ? 'T' : 'NIL';
+    if (op === 'AND') {
       let res = 'T';
       for (const arg of args) {
         res = evaluate(arg, env);
@@ -668,14 +503,14 @@ function evaluate(expr, env) {
       }
       return res;
     }
-    if (op === 'or') {
+    if (op === 'OR') {
       for (const arg of args) {
         const res = evaluate(arg, env);
         if (res !== 'NIL') return res;
       }
       return 'NIL';
     }
-    if (op === 'cond') {
+    if (op === 'COND') {
       for (const clause of args) {
         const [condition, result] = clause;
         if (evaluate(condition, env) !== 'NIL') return evaluate(result, env);
@@ -683,7 +518,7 @@ function evaluate(expr, env) {
       return 'NIL';
     }
     
-    if (op === 'while') {
+    if (op === 'WHILE') {
       const [condition, ...body] = args;
       let lastRes = 'NIL';
       while (evaluate(condition, env) !== 'NIL') {
@@ -694,11 +529,9 @@ function evaluate(expr, env) {
       return lastRes;
     }
 
-    if (op === 'label') {
-      return ['LABEL', env, args[0], args[1]];
-    }
-    if (op === 'lambda') return ['CLOSURE', env, args[0], args[1]];
-    if (op === 'begin') {
+    if (op === 'LABEL') return expr;
+    if (op === 'LAMBDA') return ['CLOSURE', env, args[0], args[1]];
+    if (op === 'BEGIN') {
       let lastResult = 'NIL';
       for (let i = 0; i < args.length; i++) {
         if (i === args.length - 1) return evaluate(args[i], env);
@@ -706,8 +539,8 @@ function evaluate(expr, env) {
       }
       return lastResult;
     }
-    if (op === 'define') return defineVar(env, args[0], evaluate(args[1], env));
-    if (op === 'set!') return setVar(env, args[0], evaluate(args[1], env), line, col);
+    if (op === 'DEFINE') return defineVar(env, args[0], evaluate(args[1], env));
+    if (op === 'SET!') return setVar(env, args[0], evaluate(args[1], env), line, col);
 
     const evaluatedOp = evaluate(op, env);
     const evaluatedArgs = args.map(arg => evaluate(arg, env));
@@ -738,21 +571,21 @@ function annotate(node, line, col) {
 function expandMacros(expr) {
   if (!Array.isArray(expr)) return expr;
   const [op, ...args] = expr;
-  const macroOp = typeof op === 'string' ? op : '';
+  const macroOp = typeof op === 'string' ? op.toUpperCase() : '';
   const line = expr._line || 0;
   const col = expr._col || 0;
 
-  if (macroOp === 'let') {
+  if (macroOp === 'LET') {
     const bindings = args[0];
     const body = args[1];
     const vars = bindings.map(b => b[0]);
     const vals = bindings.map(b => expandMacros(b[1]));
-    return annotate([['lambda', vars, expandMacros(body)], ...vals], line, col);
+    return annotate([['LAMBDA', vars, expandMacros(body)], ...vals], line, col);
   }
   
-  if (macroOp === 'if') {
+  if (macroOp === 'IF') {
     const [condition, thenBranch, elseBranch = 'NIL'] = args;
-    const condExpr = ['cond', [condition, thenBranch], ['T', elseBranch]];
+    const condExpr = ['COND', [condition, thenBranch], ['T', elseBranch]];
     return expandMacros(annotate(condExpr, line, col));
   }
 
@@ -760,31 +593,12 @@ function expandMacros(expr) {
 }
 
 function parseAllLispExpressions(text) {
-  let cleanText = text.replace(/#\|[\s\S]*?\|#/g, '');
-  
+  const cleanText = text.replace(/;.*$/gm, '');
   const lines = cleanText.split('\n');
-  const processedLines = lines.map(line => {
-    let commentIdx = -1;
-    let inString = false;
-    for (let i = 0; i < line.length; i++) {
-      const char = line[i];
-      if (char === '"' && (i === 0 || line[i - 1] !== '\\')) {
-        inString = !inString;
-      }
-      if (!inString && (char === ';' || char === '#')) {
-        commentIdx = i;
-        break;
-      }
-    }
-    return commentIdx !== -1 ? line.substring(0, commentIdx) : line;
-  });
-
-  const finalCleanText = processedLines.join('\n');
-  const tokenLines = finalCleanText.split('\n');
   const regex = /("[^"\\]*(?:\\.[^"\\]*)*"|,\@|`|,|'|\(|\)|[^\s()]+)/g;
   const tokens = [];
 
-  tokenLines.forEach((line, idx) => {
+  lines.forEach((line, idx) => {
     let match;
     while ((match = regex.exec(line)) !== null) {
       tokens.push({ value: match[0], line: idx + 1, col: match.index + 1 });
@@ -823,7 +637,7 @@ function parseAllLispExpressions(text) {
 
     let parsed;
     if (token === "'") {
-      parsed = ['quote', parseTokens()];
+      parsed = ['QUOTE', parseTokens()];
     } else if (token === '(') {
       const list = [];
       while (tokenIndex < tokens.length && tokens[tokenIndex].value !== ')') {
@@ -850,9 +664,7 @@ function parseAllLispExpressions(text) {
   return expressions;
 }
 
-codeInput.addEventListener('click', function() {
-  codeInput.focus();
-});
+const codeInput = document.getElementById('codeInput');
 
 codeInput.addEventListener('keydown', function(e) {
   if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'l') {
@@ -892,46 +704,27 @@ codeInput.addEventListener('keydown', function(e) {
     const start = codeInput.selectionStart;
     const end = codeInput.selectionEnd;
     const val = codeInput.value;
-
-    const lineStart = val.lastIndexOf('\n', start - 1) + 1;
-    let lineEnd = val.indexOf('\n', end - 1);
-    if (lineEnd === -1) lineEnd = val.length;
-
-    const selectedText = val.substring(lineStart, lineEnd);
-
-    if (e.shiftKey) {
-      const lines = selectedText.split('\n');
-      let totalRemoved = 0;
-      const updatedLines = lines.map((line, idx) => {
-        const match = line.match(/^( {1,2})/);
-        if (match) {
-          const removed = match[1].length;
-          if (idx === 0) totalRemoved = removed;
-          return line.substring(removed);
-        }
-        return line;
-      });
-
-      const updatedText = updatedLines.join('\n');
-      codeInput.value = val.substring(0, lineStart) + updatedText + val.substring(lineEnd);
-      
-      const newStart = Math.max(lineStart, start - totalRemoved);
-      const newEnd = Math.max(newStart, end - (selectedText.length - updatedText.length));
-      codeInput.setSelectionRange(newStart, newEnd);
-
-    } else {
-      if (start === end) {
-        codeInput.value = val.substring(0, start) + '  ' + val.substring(end);
-        codeInput.setSelectionRange(start + 2, start + 2);
-      } else {
-        const lines = selectedText.split('\n');
-        const updatedLines = lines.map(line => '  ' + line);
-        const updatedText = updatedLines.join('\n');
-
-        codeInput.value = val.substring(0, lineStart) + updatedText + val.substring(lineEnd);
-        codeInput.setSelectionRange(lineStart, lineStart + updatedText.length);
-      }
+    const firstLineStart = val.lastIndexOf('\n', start - 1) + 1;
+    let effectiveEnd = end;
+    if (end > start && val.charAt(end - 1) === '\n') {
+      effectiveEnd = end - 1;
     }
+    let lastLineEnd = val.indexOf('\n', effectiveEnd);
+    if (lastLineEnd === -1) lastLineEnd = val.length;
+    const selectedBlock = val.substring(firstLineStart, lastLineEnd);
+    const lines = selectedBlock.split('\n');
+    const processedLines = lines.map(line => {
+      if (e.shiftKey) {
+        if (line.startsWith('  ')) return line.substring(2);
+        if (line.startsWith(' ')) return line.substring(1);
+        return line;
+      } else {
+        return '  ' + line;
+      }
+    });
+    const replacement = processedLines.join('\n');
+    codeInput.value = val.substring(0, firstLineStart) + replacement + val.substring(lastLineEnd);
+    codeInput.setSelectionRange(firstLineStart, firstLineStart + replacement.length);
     return;
   }
 
@@ -1003,7 +796,7 @@ runBtn.addEventListener('click', function() {
     }
 
     let setupFn = null;
-    try { setupFn = assoc(globalEnv, 'setup', 0, 0); } catch (e) {}
+    try { setupFn = assoc(globalEnv, 'SETUP', 0, 0); } catch (e) {}
 
     if (setupFn) {
       try {
@@ -1022,17 +815,12 @@ runBtn.addEventListener('click', function() {
     }
 
     let updateFn = null;
-    try { updateFn = assoc(globalEnv, 'update', 0, 0); } catch (e) {}
+    try { updateFn = assoc(globalEnv, 'UPDATE', 0, 0); } catch (e) {}
 
     if (updateFn) {
-      let lastTime = performance.now();
-
-      function loop(currentTime) {
-        const dt = (currentTime - lastTime) / 1000.0;
-        lastTime = currentTime;
-
+      function loop() {
         try {
-          trampoline(callClosure(updateFn, [dt], 0, 0));
+          trampoline(callClosure(updateFn, [], 0, 0));
         } catch (updateErr) {
           if (updateErr instanceof ProgramEndSignal) return;
           if (updateErr instanceof LispRuntimeError) {
@@ -1048,11 +836,7 @@ runBtn.addEventListener('click', function() {
           animationFrameId = requestAnimationFrame(loop);
         }
       }
-
-      animationFrameId = requestAnimationFrame((timestamp) => {
-        lastTime = timestamp;
-        animationFrameId = requestAnimationFrame(loop);
-      });
+      animationFrameId = requestAnimationFrame(loop);
     } else {
       stopProgram();
     }

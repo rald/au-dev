@@ -330,17 +330,6 @@ const baseEnv = makeEnv({
   'shl': (a, b) => a << b,
   'shr': (a, b) => a >> b,
 
-  // Character code primitives
-  'ord': (str) => {
-    let s = lispToString(str);
-    if (s.startsWith('"') && s.endsWith('"')) s = s.slice(1, -1);
-    return s.length > 0 ? s.charCodeAt(0) : 0;
-  },
-  'chr': (code) => {
-    const c = Math.floor(code);
-    return `"${unescapeString(String.fromCharCode(c))}"`;
-  },
-
   // Keyboard primitives
   'key-down?': (keyStr) => {
     let key = lispToString(keyStr).toLowerCase();
@@ -390,33 +379,6 @@ const baseEnv = makeEnv({
   'text': (str, x, y, color) => {
     let textStr = lispToString(str);
     drawText(textStr, x, y, parseColor(color, '#ffffff'));
-    return 'T';
-  },
-
-  'putch': (asciiCode, x, y, color) => {
-    const code = Math.floor(asciiCode);
-    const startX = Math.floor(x);
-    const startY = Math.floor(y);
-    const colorStr = parseColor(color, '#ffffff');
-    const CANVAS_WIDTH = 128;
-    const CANVAS_HEIGHT = 128;
-
-    if (startY + 8 > 0 && startY < CANVAS_HEIGHT) {
-      const charBitmap = DOS_FONT_8X8[code] || DOS_FONT_8X8[32];
-      ctx.fillStyle = colorStr;
-      for (let row = 0; row < 8; row++) {
-        const rowByte = charBitmap[row];
-        for (let col = 0; col < 8; col++) {
-          if ((rowByte & (1 << (7 - col))) !== 0) {
-            const px = startX + col;
-            const py = startY + row;
-            if (px >= 0 && px < CANVAS_WIDTH && py >= 0 && py < CANVAS_HEIGHT) {
-              ctx.fillRect(px, py, 1, 1);
-            }
-          }
-        }
-      }
-    }
     return 'T';
   },
 

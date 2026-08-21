@@ -35,17 +35,6 @@ function parseColor(color, defaultStr = '#ffffff') {
   return colStr;
 }
 
-function unescapeString(str) {
-  return str
-    .replace(/\\b/g, '\b')
-    .replace(/\\r/g, '\r')
-    .replace(/\\n/g, '\n')
-    .replace(/\\t/g, '\t')
-    .replace(/\\v/g, '\v')
-    .replace(/\\"/g, '"')
-    .replace(/\\\\/g, '\\');
-}
-
 function drawText(str, x, y, colorStr) {
   let textStr = String(str);
   if (textStr.startsWith('"') && textStr.endsWith('"')) {
@@ -63,37 +52,7 @@ function drawText(str, x, y, colorStr) {
   for (let i = 0; i < textStr.length; i++) {
     const code = textStr.charCodeAt(i);
     
-    if (code === 8) { // Backspace (\b) -> Move cursor back one character width (8px)
-      cursorX = Math.max(startX, cursorX - 8);
-      continue;
-    }
-
-    if (code === 13) { // Carriage Return (\r) -> Reset X to startX
-      cursorX = startX;
-      continue;
-    }
-
-    if (code === 10) { // Newline (\n) -> Move down one line and reset X
-      cursorX = startX;
-      startY += 8;
-      continue;
-    }
-    
-    if (code === 11) { // Vertical tab (\v) -> Move down one line without resetting X
-      startY += 8;
-      continue;
-    }
-    
-    if (code === 9) { // Tab character support (\t) -> Advance by 4 spaces (32px)
-      cursorX += 32;
-      if (cursorX + 8 > CANVAS_WIDTH) {
-        cursorX = startX;
-        startY += 8;
-      }
-      continue;
-    }
-    
-    if (cursorX + 8 > CANVAS_WIDTH) {
+    if (code === 10 || cursorX + 8 > CANVAS_WIDTH) {
       cursorX = startX;
       startY += 8;
     }
@@ -240,6 +199,14 @@ class ProgramEndSignal extends Error {
   }
 }
 
+function unescapeString(str) {
+  return str
+    .replace(/\\n/g, '\n')
+    .replace(/\\t/g, '\t')
+    .replace(/\\"/g, '"')
+    .replace(/\\\\/g, '\\');
+}
+
 function lispToString(val) {
   if (typeof val === 'string' && val.startsWith('"')) {
     return unescapeString(val.slice(1, -1));
@@ -330,17 +297,6 @@ const baseEnv = makeEnv({
   'shl': (a, b) => a << b,
   'shr': (a, b) => a >> b,
 
-  // Character code primitives
-  'ord': (str) => {
-    let s = lispToString(str);
-    if (s.startsWith('"') && s.endsWith('"')) s = s.slice(1, -1);
-    return s.length > 0 ? s.charCodeAt(0) : 0;
-  },
-  'chr': (code) => {
-    const c = Math.floor(code);
-    return `"${unescapeString(String.fromCharCode(c))}"`;
-  },
-
   // Keyboard primitives
   'key-down?': (keyStr) => {
     let key = lispToString(keyStr).toLowerCase();
@@ -388,35 +344,7 @@ const baseEnv = makeEnv({
   'pget': (x, y) => pget(x, y),
 
   'text': (str, x, y, color) => {
-    let textStr = lispToString(str);
-    drawText(textStr, x, y, parseColor(color, '#ffffff'));
-    return 'T';
-  },
-
-  'putch': (asciiCode, x, y, color) => {
-    const code = Math.floor(asciiCode);
-    const startX = Math.floor(x);
-    const startY = Math.floor(y);
-    const colorStr = parseColor(color, '#ffffff');
-    const CANVAS_WIDTH = 128;
-    const CANVAS_HEIGHT = 128;
-
-    if (startY + 8 > 0 && startY < CANVAS_HEIGHT) {
-      const charBitmap = DOS_FONT_8X8[code] || DOS_FONT_8X8[32];
-      ctx.fillStyle = colorStr;
-      for (let row = 0; row < 8; row++) {
-        const rowByte = charBitmap[row];
-        for (let col = 0; col < 8; col++) {
-          if ((rowByte & (1 << (7 - col))) !== 0) {
-            const px = startX + col;
-            const py = startY + row;
-            if (px >= 0 && px < CANVAS_WIDTH && py >= 0 && py < CANVAS_HEIGHT) {
-              ctx.fillRect(px, py, 1, 1);
-            }
-          }
-        }
-      }
-    }
+    drawText(str, x, y, parseColor(color, '#ffffff'));
     return 'T';
   },
 
@@ -738,6 +666,7 @@ function annotate(node, line, col) {
 function expandMacros(expr) {
   if (!Array.isArray(expr)) return expr;
   const [op, ...args] = expr;
+  // Case-sensitive check for lowercase macro keywords
   const macroOp = typeof op === 'string' ? op : '';
   const line = expr._line || 0;
   const col = expr._col || 0;
