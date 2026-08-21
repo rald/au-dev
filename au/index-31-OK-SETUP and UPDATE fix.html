@@ -472,27 +472,6 @@
     });
 
     if (tokens.length === 0) return [];
-
-    // Robust Parenthesis Validation with exact line/col tracking
-    let openParens = 0;
-    let lastOpenTok = null;
-    
-    for (const tok of tokens) {
-      if (tok.value === '(') {
-        openParens++;
-        lastOpenTok = tok;
-      } else if (tok.value === ')') {
-        openParens--;
-        if (openParens < 0) {
-          throw new Error(`Unmatched closing parenthesis ')' at line ${tok.line}, col ${tok.col}`);
-        }
-      }
-    }
-    
-    if (openParens > 0 && lastOpenTok) {
-      throw new Error(`Unclosed parenthesis '(' at line ${lastOpenTok.line}, col ${lastOpenTok.col}`);
-    }
-
     let tokenIndex = 0;
 
     function parseTokens() {
