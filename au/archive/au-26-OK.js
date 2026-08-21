@@ -330,17 +330,6 @@ const baseEnv = makeEnv({
   'shl': (a, b) => a << b,
   'shr': (a, b) => a >> b,
 
-  // Character code primitives
-  'ord': (str) => {
-    let s = lispToString(str);
-    if (s.startsWith('"') && s.endsWith('"')) s = s.slice(1, -1);
-    return s.length > 0 ? s.charCodeAt(0) : 0;
-  },
-  'chr': (code) => {
-    const c = Math.floor(code);
-    return `"${unescapeString(String.fromCharCode(c))}"`;
-  },
-
   // Keyboard primitives
   'key-down?': (keyStr) => {
     let key = lispToString(keyStr).toLowerCase();
