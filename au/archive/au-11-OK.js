@@ -41,41 +41,24 @@ function drawText(str, x, y, colorStr) {
     textStr = unescapeString(textStr.slice(1, -1));
   }
   
-  let startX = Math.floor(x);
-  let cursorX = startX;
+  let cursorX = Math.floor(x);
   let startY = Math.floor(y);
   ctx.fillStyle = colorStr;
 
-  const CANVAS_WIDTH = 128;
-  const CANVAS_HEIGHT = 128;
-
   for (let i = 0; i < textStr.length; i++) {
     const code = textStr.charCodeAt(i);
-    
-    // Handle explicit newlines or automatic wrapping when exceeding canvas width (128px)
-    if (code === 10 || cursorX + 8 > CANVAS_WIDTH) {
-      cursorX = startX;
+    if (code === 10) { // newline character
+      cursorX = Math.floor(x);
       startY += 8;
+      continue;
     }
     
-    // Stop drawing if vertical position goes beyond canvas bounds
-    if (startY >= CANVAS_HEIGHT) {
-      break;
-    }
-
-    // Skip drawing if above canvas
-    if (startY + 8 > 0) {
-      const charBitmap = DOS_FONT_8X8[code] || DOS_FONT_8X8[32]; // default to space if out of range
-      for (let row = 0; row < 8; row++) {
-        const rowByte = charBitmap[row];
-        for (let col = 0; col < 8; col++) {
-          if ((rowByte & (1 << (7 - col))) !== 0) {
-            const px = cursorX + col;
-            const py = startY + row;
-            if (px >= 0 && px < CANVAS_WIDTH && py >= 0 && py < CANVAS_HEIGHT) {
-              ctx.fillRect(px, py, 1, 1);
-            }
-          }
+    const charBitmap = DOS_FONT_8X8[code] || DOS_FONT_8X8[32]; // default to space if out of range
+    for (let row = 0; row < 8; row++) {
+      const rowByte = charBitmap[row];
+      for (let col = 0; col < 8; col++) {
+        if ((rowByte & (1 << (7 - col))) !== 0) {
+          ctx.fillRect(cursorX + col, startY + row, 1, 1);
         }
       }
     }
