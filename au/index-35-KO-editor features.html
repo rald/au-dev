@@ -533,41 +533,23 @@
 
   const codeInput = document.getElementById('codeInput');
 
-  // Textarea Enhancements: CTRL-L with Current Line:Col & Max Lines, Tab Indentation, Autoindent
+  // Textarea Enhancements: CTRL-L, Tab/Shift-Tab (Selection support), Autoindent
   codeInput.addEventListener('keydown', function(e) {
-    // CTRL-L: Go to Line:Col with context info
+    // CTRL-L: Go to Line:Col
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'l') {
       e.preventDefault();
-      
-      const val = codeInput.value;
-      const lines = val.split('\n');
-      const maxLines = lines.length;
-      
-      // Calculate current line and column from selectionStart
-      const cursorLoc = codeInput.selectionStart;
-      let currentLine = 1;
-      let lastNewlineIdx = -1;
-      for (let i = 0; i < cursorLoc; i++) {
-        if (val.charAt(i) === '\n') {
-          currentLine++;
-          lastNewlineIdx = i;
-        }
-      }
-      const currentCol = cursorLoc - lastNewlineIdx;
-
-      const promptMsg = `Current Line:Col -> ${currentLine}:${currentCol} | Max Lines -> ${maxLines}\nGo to line:column (e.g. 5:12):`;
-      const input = prompt(promptMsg);
+      const input = prompt("Go to line:column (e.g. 5:12):");
       if (!input) return;
-
       const parts = input.split(':');
       const targetLine = parseInt(parts[0], 10);
       const targetCol = parts.length > 1 ? parseInt(parts[1], 10) : 1;
       
       if (isNaN(targetLine) || targetLine < 1) return;
 
+      const lines = codeInput.value.split('\n');
       let charIndex = 0;
       for (let i = 0; i < Math.min(targetLine - 1, lines.length); i++) {
-        charIndex += lines[i].length + 1;
+        charIndex += lines[i].length + 1; // +1 for newline
       }
       charIndex += Math.max(0, targetCol - 1);
       
@@ -576,7 +558,7 @@
       return;
     }
 
-    // TAB / SHIFT-TAB Indentation (Strictly affects highlighted lines or current line)
+    // TAB / SHIFT-TAB Indentation
     if (e.key === 'Tab') {
       e.preventDefault();
       const start = codeInput.selectionStart;
@@ -584,30 +566,41 @@
       const val = codeInput.value;
 
       const firstLineStart = val.lastIndexOf('\n', start - 1) + 1;
-      
-      let effectiveEnd = end;
-      if (end > start && val.charAt(end - 1) === '\n') {
-        effectiveEnd = end - 1;
-      }
-      let lastLineEnd = val.indexOf('\n', effectiveEnd);
-      if (lastLineEnd === -1) lastLineEnd = val.length;
+      const lastLineEnd = val.indexOf('\n', end);
+      const subEnd = lastLineEnd === -1 ? val.length : lastLineEnd;
 
-      const selectedBlock = val.substring(firstLineStart, lastLineEnd);
-      const lines = selectedBlock.split('\n');
+      if (start !== end && val.substring(firstLineStart, subEnd).includes('\n')) {
+        // Multi-line selection indent/unindent
+        const lines = val.substring(firstLineStart, subEnd).split('\n');
+        const processedLines = lines.map(line => {
+          if (e.shiftKey) {
+            return line.startsWith('  ') ? line.substring(2) : (line.startsWith(' ') ? line.substring(1) : line);
+          } else {
+            return '  ' + line;
+          }
+        });
 
-      const processedLines = lines.map(line => {
+        const replacement = processedLines.join('\n');
+        codeInput.value = val.substring(0, firstLineStart) + replacement + val.substring(subEnd);
+        codeInput.setSelectionRange(firstLineStart, firstLineStart + replacement.length);
+      } else {
+        // Single line cursor or simple insertion
         if (e.shiftKey) {
-          if (line.startsWith('  ')) return line.substring(2);
-          if (line.startsWith(' ')) return line.substring(1);
-          return line;
+          // Unindent cursor line prefix if spaces exist
+          const lineStart = val.lastIndexOf('\n', start - 1) + 1;
+          const linePrefix = val.substring(lineStart, start);
+          if (linePrefix.endsWith('  ')) {
+            codeInput.value = val.substring(0, start - 2) + val.substring(start);
+            codeInput.setSelectionRange(start - 2, start - 2);
+          } else if (linePrefix.endsWith(' ')) {
+            codeInput.value = val.substring(0, start - 1) + val.substring(start);
+            codeInput.setSelectionRange(start - 1, start - 1);
+          }
         } else {
-          return '  ' + line;
+          codeInput.value = val.substring(0, start) + '  ' + val.substring(end);
+          codeInput.setSelectionRange(start + 2, start + 2);
         }
-      });
-
-      const replacement = processedLines.join('\n');
-      codeInput.value = val.substring(0, firstLineStart) + replacement + val.substring(lastLineEnd);
-      codeInput.setSelectionRange(firstLineStart, firstLineStart + replacement.length);
+      }
       return;
     }
 
@@ -623,6 +616,7 @@
       const match = currentLine.match(/^([ \t]*)/);
       const indent = match ? match[1] : '';
 
+      // Check if line opens an extra parenthesis to add extra indent padding
       const openExtra = (currentLine.match(/\(/g) || []).length > (currentLine.match(/\)/g) || []).length;
       const extraIndent = openExtra ? '  ' : '';
 

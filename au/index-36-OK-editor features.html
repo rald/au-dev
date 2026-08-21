@@ -533,38 +533,20 @@
 
   const codeInput = document.getElementById('codeInput');
 
-  // Textarea Enhancements: CTRL-L with Current Line:Col & Max Lines, Tab Indentation, Autoindent
+  // Textarea Enhancements: CTRL-L, Tab/Shift-Tab (Highlight selection only), Autoindent
   codeInput.addEventListener('keydown', function(e) {
-    // CTRL-L: Go to Line:Col with context info
+    // CTRL-L: Go to Line:Col
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'l') {
       e.preventDefault();
-      
-      const val = codeInput.value;
-      const lines = val.split('\n');
-      const maxLines = lines.length;
-      
-      // Calculate current line and column from selectionStart
-      const cursorLoc = codeInput.selectionStart;
-      let currentLine = 1;
-      let lastNewlineIdx = -1;
-      for (let i = 0; i < cursorLoc; i++) {
-        if (val.charAt(i) === '\n') {
-          currentLine++;
-          lastNewlineIdx = i;
-        }
-      }
-      const currentCol = cursorLoc - lastNewlineIdx;
-
-      const promptMsg = `Current Line:Col -> ${currentLine}:${currentCol} | Max Lines -> ${maxLines}\nGo to line:column (e.g. 5:12):`;
-      const input = prompt(promptMsg);
+      const input = prompt("Go to line:column (e.g. 5:12):");
       if (!input) return;
-
       const parts = input.split(':');
       const targetLine = parseInt(parts[0], 10);
       const targetCol = parts.length > 1 ? parseInt(parts[1], 10) : 1;
       
       if (isNaN(targetLine) || targetLine < 1) return;
 
+      const lines = codeInput.value.split('\n');
       let charIndex = 0;
       for (let i = 0; i < Math.min(targetLine - 1, lines.length); i++) {
         charIndex += lines[i].length + 1;
@@ -583,8 +565,10 @@
       const end = codeInput.selectionEnd;
       const val = codeInput.value;
 
+      // Find boundaries of lines touched by the selection
       const firstLineStart = val.lastIndexOf('\n', start - 1) + 1;
       
+      // If end points right at a newline, don't include the next empty line in the block operation unless multi-char selected
       let effectiveEnd = end;
       if (end > start && val.charAt(end - 1) === '\n') {
         effectiveEnd = end - 1;
@@ -597,10 +581,12 @@
 
       const processedLines = lines.map(line => {
         if (e.shiftKey) {
+          // Unindent 2 spaces (or 1 if only 1 space exists)
           if (line.startsWith('  ')) return line.substring(2);
           if (line.startsWith(' ')) return line.substring(1);
           return line;
         } else {
+          // Indent 2 spaces
           return '  ' + line;
         }
       });
