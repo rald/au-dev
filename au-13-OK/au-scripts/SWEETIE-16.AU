@@ -1,0 +1,24 @@
+; Sweetie-16 Palette Definition with Candy Labels for au.js
+; Original Palette by GrafxKid
+
+(DEFINE SWEETIE-16 
+  (LIST
+    (COLOR 26  28  44)   ;  0: Dark Licorice (#1a1c2c)
+    (COLOR 93  39  93)   ;  1: Plum Chew (#5d275d)
+    (COLOR 177 62  83)   ;  2: Cherry Drop (#b13e53)
+    (COLOR 239 125 87)   ;  3: Tangerine Pop (#ef7d57)
+    (COLOR 255 205 117)  ;  4: Butterscotch Hard Candy (#ffcd75)
+    (COLOR 167 240 112)  ;  5: Sour Apple Gummy (#a7f070)
+    (COLOR 56  183 100)  ;  6: Mint Jelly Bean (#38b764)
+    (COLOR 37  113 121)  ;  7: Teal Taffy (#257179)
+    (COLOR 41  54  111)  ;  8: Blue Raspberry Jawbreaker (#29366f)
+    (COLOR 59  93  201)  ;  9: Bubblegum Pop (#3b5dc9)
+    (COLOR 65  166 246)  ; 10: Cotton Candy Blue (#41a6f6)
+    (COLOR 115 239 247)  ; 11: Frosty Soda Fizz (#73eff7)
+    (COLOR 244 244 244)  ; 12: Sugar Frosting (#f4f4f4)
+    (COLOR 148 176 194)  ; 13: Silver Mint Wrapper (#94b0c2)
+    (COLOR 86  108 134)  ; 14: Blueberry Rock Candy (#566c86)
+    (COLOR 51  60  87)   ; 15: Dark Chocolate Truffle (#333c57)
+  )
+)
+

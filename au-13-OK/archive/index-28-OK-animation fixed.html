@@ -1,0 +1,608 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SectorLISP JS IDE - Responsive Canvas (Zoom 4)</title>
+  <style>
+    body {
+      background-color: #0d1117;
+      color: #c9d1d9;
+      font-family: 'Courier New', Courier, monospace;
+      margin: 0;
+      padding: 15px;
+      display: flex;
+      flex-direction: column;
+      min-height: 100vh;
+      box-sizing: border-box;
+    }
+    .container {
+      display: flex;
+      gap: 20px;
+      flex: 1;
+      min-height: 0;
+      flex-wrap: wrap;
+    }
+    .pane {
+      flex: 1;
+      min-width: 280px;
+      display: flex;
+      flex-direction: column;
+    }
+    .canvas-pane {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: flex-start;
+      min-width: 280px;
+    }
+    textarea {
+      flex: 1;
+      min-height: 250px;
+      background-color: #161b22;
+      border: 1px solid #30363d;
+      border-radius: 6px;
+      padding: 12px;
+      color: #c9d1d9;
+      font-family: 'Courier New', Courier, monospace;
+      font-size: 14px;
+      resize: vertical;
+      box-sizing: border-box;
+      outline: none;
+    }
+    textarea:focus {
+      border-color: #58a6ff;
+    }
+    canvas {
+      width: 512px;
+      height: 512px;
+      max-width: 100%;
+      aspect-ratio: 1 / 1;
+      background-color: #000000;
+      border: 2px solid #30363d;
+      border-radius: 6px;
+      image-rendering: pixelated;
+      image-rendering: crisp-edges;
+    }
+    .controls {
+      margin-top: 15px;
+      display: flex;
+      justify-content: flex-end;
+    }
+    button {
+      background-color: #238636;
+      color: white;
+      border: none;
+      border-radius: 6px;
+      padding: 10px 20px;
+      font-family: 'Courier New', Courier, monospace;
+      font-size: 16px;
+      font-weight: bold;
+      cursor: pointer;
+      transition: background-color 0.2s;
+      width: 100%;
+    }
+    button.running {
+      background-color: #da3633;
+    }
+    button.running:hover {
+      background-color: #f85149;
+    }
+    @media (min-width: 600px) {
+      button {
+        width: auto;
+      }
+    }
+    button:hover {
+      background-color: #2ea043;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="container">
+    <div class="pane">
+      <textarea id="codeInput">
+(DEFINE RND (LAMBDA (N)
+  (FLOOR (* (RANDOM) N))
+))
+
+;; Test RND printing
+(PRINT (RND 128))
+
+;; Clear screen once at startup
+(CLEAR-SCREEN (COLOR 0 0 0 255))
+
+;; Main animation frame loop function recognized by the host runner
+(DEFINE UPDATE (LAMBDA ()
+  (PSET (RND 128) (RND 128) (COLOR (RND 256) (RND 256) (RND 256) 255))
+  (REFRESH-CANVAS)
+))
+      </textarea>
+    </div>
+
+    <div class="canvas-pane">
+      <canvas id="displayCanvas" width="128" height="128"></canvas>
+    </div>
+  </div>
+
+  <div class="controls">
+    <button id="runBtn">RUN</button>
+  </div>
+
+<script>
+  const canvas = document.getElementById('displayCanvas');
+  const ctx = canvas.getContext('2d');
+  
+  function clearScreen(color = '#000000') {
+    ctx.fillStyle = color;
+    ctx.fillRect(0, 0, 128, 128);
+  }
+
+  function pset(x, y, color = '#ffffff') {
+    ctx.fillStyle = color;
+    ctx.fillRect(Math.floor(x), Math.floor(y), 1, 1);
+  }
+
+  function pget(x, y) {
+    const px = Math.floor(x);
+    const py = Math.floor(y);
+    if (px < 0 || px >= 128 || py < 0 || py >= 128) return ['QUOTE', ['COLOR', 0, 0, 0, 255]];
+    const pixel = ctx.getImageData(px, py, 1, 1).data;
+    return ['QUOTE', ['COLOR', pixel[0], pixel[1], pixel[2], pixel[3]]];
+  }
+
+  clearScreen('#000000');
+
+  class LispRuntimeError extends Error {
+    constructor(message, line = 0, col = 0) {
+      super(message);
+      this.name = "LispRuntimeError";
+      this.line = line;
+      this.col = col;
+    }
+  }
+
+  function unescapeString(str) {
+    return str
+      .replace(/\\n/g, '\n')
+      .replace(/\\t/g, '\t')
+      .replace(/\\"/g, '"')
+      .replace(/\\\\/g, '\\');
+  }
+
+  function lispToString(val) {
+    if (typeof val === 'string' && val.startsWith('"')) {
+      return unescapeString(val.slice(1, -1));
+    }
+    if (Array.isArray(val)) {
+      if (val.length === 0 || val === 'NIL') return 'NIL';
+      return '(' + val.map(lispToString).join(' ') + ')';
+    }
+    return String(val);
+  }
+
+  let activeAppendOutput = null;
+  let animationFrameId = null;
+
+  function makeEnv(bindings = {}, parent = null) {
+    return { bindings, parent };
+  }
+
+  function lookupEnv(env, id, line, col) {
+    let current = env;
+    while (current !== null) {
+      if (Object.prototype.hasOwnProperty.call(current.bindings, id)) {
+        return current;
+      }
+      current = current.parent;
+    }
+    throw new LispRuntimeError(`Unbound symbol: ${id}`, line, col);
+  }
+
+  function assoc(env, id, line, col) {
+    const frame = lookupEnv(env, id, line, col);
+    return frame.bindings[id];
+  }
+
+  function defineVar(env, id, val) {
+    env.bindings[id] = val;
+    return val;
+  }
+
+  function setVar(env, id, val, line, col) {
+    const frame = lookupEnv(env, id, line, col);
+    frame.bindings[id] = val;
+    return val;
+  }
+
+  const baseEnv = makeEnv({
+    '+': (...args) => args.reduce((acc, curr) => acc + curr, 0),
+    '-': (...args) => {
+      if (args.length === 0) throw new LispRuntimeError("- requires at least 1 argument");
+      if (args.length === 1) return -args[0];
+      return args.reduce((acc, curr, idx) => (idx === 0 ? curr : acc - curr), 0);
+    },
+    '*': (...args) => args.reduce((acc, curr) => acc * curr, 1),
+    '/': (...args) => {
+      if (args.length === 0) throw new LispRuntimeError("/ requires at least 1 argument");
+      if (args.some(x => x === 0)) throw new LispRuntimeError("Division by zero");
+      if (args.length === 1) return 1 / args[0];
+      return args.reduce((acc, curr, idx) => (idx === 0 ? curr : acc / curr), 0);
+    },
+    'MOD': (a, b) => a % b,
+    'ABS': (a) => Math.abs(a),
+    'SGN': (a) => a < 0 ? -1 : (a > 0 ? 1 : 0),
+    'MAX': (...args) => Math.max(...args),
+    'MIN': (...args) => Math.min(...args),
+    'RANDOM': () => Math.random(),
+    'TRUNC': (a) => Math.trunc(a),
+    'FLOOR': (a) => Math.floor(a),
+    'CEIL': (a) => Math.ceil(a),
+    'ROUND': (a) => Math.round(a),
+    'BITAND': (a, b) => a & b,
+    'BITOR': (a, b) => a | b,
+    'BITXOR': (a, b) => a ^ b,
+    'BITNOT': (a) => ~a,
+    'SHL': (a, b) => a << b,
+    'SHR': (a, b) => a >> b,
+
+    'COLOR': (r, g, b, a = 255) => {
+      const rc = Math.max(0, Math.min(255, Math.floor(r)));
+      const gc = Math.max(0, Math.min(255, Math.floor(g)));
+      const bc = Math.max(0, Math.min(255, Math.floor(b)));
+      const ac = Math.max(0, Math.min(1, a / 255));
+      return `rgba(${rc}, ${gc}, ${bc}, ${ac})`;
+    },
+
+    'CLEAR-SCREEN': (color) => {
+      let colStr = color ? lispToString(color) : '#000000';
+      if (colStr.startsWith('"') && colStr.endsWith('"')) colStr = colStr.slice(1, -1);
+      clearScreen(colStr);
+      return 'T';
+    },
+    'PSET': (x, y, color) => {
+      let colStr = '#ffffff';
+      if (Array.isArray(color) && color[0] === 'COLOR') {
+        const [, r, g, b, a = 255] = color;
+        colStr = baseEnv.bindings['COLOR'](r, g, b, a);
+      } else if (color) {
+        colStr = lispToString(color);
+        if (colStr.startsWith('"') && colStr.endsWith('"')) colStr = colStr.slice(1, -1);
+      }
+      pset(x, y, colStr);
+      return 'T';
+    },
+    'PGET': (x, y) => pget(x, y),
+    'REFRESH-CANVAS': () => 'T',
+
+    '<': (a, b) => a < b ? 'T' : 'NIL',
+    '>': (a, b) => a > b ? 'T' : 'NIL',
+    '<=': (a, b) => a <= b ? 'T' : 'NIL',
+    '>=': (a, b) => a >= b ? 'T' : 'NIL',
+    '=': (a, b) => a === b ? 'T' : 'NIL',
+    'EQ': (a, b) => (a === b || (String(a) === 'NIL' && String(b) === 'NIL')) ? 'T' : 'NIL',
+    'NOT': (x) => (x === 'NIL') ? 'T' : 'NIL',
+    'ATOM': (x) => (!Array.isArray(x) || x === 'NIL' || x.length === 0) ? 'T' : 'NIL',
+    'NULL': (x) => (x === 'NIL' || (Array.isArray(x) && x.length === 0)) ? 'T' : 'NIL',
+    'NUMBERP': (x) => typeof x === 'number' ? 'T' : 'NIL',
+    'SYMBOLP': (x) => (typeof x === 'string' && !x.startsWith('"')) ? 'T' : 'NIL',
+    'LISTP': (x) => Array.isArray(x) ? 'T' : 'NIL',
+    'CAR': (x) => x[0],
+    'CDR': (x) => x.slice(1),
+    'CONS': (x, y) => [x, ...y],
+    'LIST': (...args) => args.length === 0 ? 'NIL' : args,
+    'APPEND': (...lists) => {
+      let result = [];
+      for (const lst of lists) {
+        if (lst !== 'NIL' && Array.isArray(lst)) {
+          result = result.concat(lst);
+        }
+      }
+      return result.length === 0 ? 'NIL' : result;
+    },
+    'EQUAL': function deepEqual(a, b) {
+      if (a === b) return 'T';
+      if (Array.isArray(a) && Array.isArray(b)) {
+        if (a.length !== b.length) return 'NIL';
+        for (let i = 0; i < a.length; i++) {
+          if (deepEqual(a[i], b[i]) === 'NIL') return 'NIL';
+        }
+        return 'T';
+      }
+      return 'NIL';
+    },
+    'ERROR': (msg) => { throw new LispRuntimeError(msg); },
+    'PRINT': (...args) => {
+      const formatted = args.map(arg => {
+        let str = lispToString(arg);
+        if (str.startsWith('"') && str.endsWith('"')) {
+          str = unescapeString(str.slice(1, -1));
+        }
+        return str;
+      }).join(' ');
+
+      if (activeAppendOutput) {
+        activeAppendOutput(`[PRINT]: ${formatted}`, "output-print");
+      }
+      return args.length === 1 ? args[0] : args[args.length - 1];
+    },
+    'T': 'T',
+    'NIL': 'NIL'
+  });
+
+  class TailCall {
+    constructor(thunk) { this.thunk = thunk; }
+  }
+
+  function trampoline(result) {
+    while (result instanceof TailCall) {
+      result = result.thunk();
+    }
+    return result;
+  }
+
+  function callClosure(fnVal, evaluatedArgs, line, col) {
+    if (typeof fnVal === 'function') {
+      return fnVal(...evaluatedArgs);
+    }
+    if (Array.isArray(fnVal)) {
+      if (fnVal[0] === 'CLOSURE') {
+        const [, closureEnv, params, body] = fnVal;
+        const callBindings = {};
+        for (let i = 0; i < params.length; i++) {
+          callBindings[params[i]] = evaluatedArgs[i];
+        }
+        const callEnv = makeEnv(callBindings, closureEnv);
+        return new TailCall(() => evaluate(body, callEnv));
+      }
+      if (fnVal[0] === 'LABEL') {
+        const [, name, lambdaExpr] = fnVal;
+        const recursiveBindings = {};
+        recursiveBindings[name] = fnVal;
+        const recursiveEnv = makeEnv(recursiveBindings, fnVal[1] || baseEnv);
+        if (lambdaExpr[0] === 'LAMBDA') {
+          const [, params, body] = lambdaExpr;
+          const callBindings = {};
+          for (let i = 0; i < params.length; i++) {
+            callBindings[params[i]] = evaluatedArgs[i];
+          }
+          const callEnv = makeEnv(callBindings, recursiveEnv);
+          return new TailCall(() => evaluate(body, callEnv));
+        }
+      }
+    }
+    throw new LispRuntimeError(`Not a function: ${lispToString(fnVal)}`, line, col);
+  }
+
+  function evaluate(expr, env) {
+    const line = (expr && (Array.isArray(expr) || typeof expr === 'string')) ? (expr._line || 0) : 0;
+    const col = (expr && (Array.isArray(expr) || typeof expr === 'string')) ? (expr._col || 0) : 0;
+
+    if (typeof expr === 'number') return expr;
+    if (expr === 'T' || expr === 'NIL') return expr;
+    if (typeof expr === 'string' && expr.startsWith('"')) return expr;
+    if (typeof expr === 'string') return assoc(env, expr, line, col);
+
+    if (Array.isArray(expr)) {
+      const [op, ...args] = expr;
+
+      if (op === 'QUOTE') return args[0];
+      if (op === 'NOT') return evaluate(args[0], env) === 'NIL' ? 'T' : 'NIL';
+      if (op === 'AND') {
+        let res = 'T';
+        for (const arg of args) {
+          res = evaluate(arg, env);
+          if (res === 'NIL') return 'NIL';
+        }
+        return res;
+      }
+      if (op === 'OR') {
+        for (const arg of args) {
+          const res = evaluate(arg, env);
+          if (res !== 'NIL') return res;
+        }
+        return 'NIL';
+      }
+      if (op === 'COND') {
+        for (const clause of args) {
+          const [condition, result] = clause;
+          if (evaluate(condition, env) !== 'NIL') return evaluate(result, env);
+        }
+        return 'NIL';
+      }
+      if (op === 'LABEL') return expr;
+      if (op === 'LAMBDA') return ['CLOSURE', env, args[0], args[1]];
+      if (op === 'BEGIN') {
+        let lastResult = 'NIL';
+        for (let i = 0; i < args.length; i++) {
+          if (i === args.length - 1) return evaluate(args[i], env);
+          lastResult = evaluate(args[i], env);
+        }
+        return lastResult;
+      }
+      if (op === 'DEFINE') return defineVar(env, args[0], evaluate(args[1], env));
+      if (op === 'SET!') return setVar(env, args[0], evaluate(args[1], env), line, col);
+
+      const evaluatedOp = evaluate(op, env);
+      const evaluatedArgs = args.map(arg => evaluate(arg, env));
+
+      try {
+        const res = callClosure(evaluatedOp, evaluatedArgs, line, col);
+        // Ensure TailCalls or raw primitives from helper calls are fully unpacked/trampolined
+        return res instanceof TailCall ? trampoline(res) : res;
+      } catch (jsErr) {
+        if (jsErr instanceof LispRuntimeError) {
+          if (!jsErr.line) { jsErr.line = line; jsErr.col = col; }
+          throw jsErr;
+        }
+        throw new LispRuntimeError(jsErr.message, line, col);
+      }
+    }
+    throw new LispRuntimeError(`Unknown expression syntax: ${JSON.stringify(expr)}`, line, col);
+  }
+
+  function annotate(node, line, col) {
+    if (Array.isArray(node) || typeof node === 'string') {
+      node._line = line;
+      node._col = col;
+    }
+    return node;
+  }
+
+  function expandMacros(expr) {
+    if (!Array.isArray(expr)) return expr;
+    const [op, ...args] = expr;
+    const macroOp = typeof op === 'string' ? op.toUpperCase() : '';
+    const line = expr._line || 0;
+    const col = expr._col || 0;
+
+    if (macroOp === 'LET') {
+      const bindings = args[0];
+      const body = args[1];
+      const vars = bindings.map(b => b[0]);
+      const vals = bindings.map(b => expandMacros(b[1]));
+      return annotate([['LAMBDA', vars, expandMacros(body)], ...vals], line, col);
+    }
+    return annotate(expr.map(expandMacros), line, col);
+  }
+
+  function parseAllLispExpressions(text) {
+    const cleanText = text.replace(/;.*$/gm, '');
+    const lines = cleanText.split('\n');
+    const regex = /("[^"\\]*(?:\\.[^"\\]*)*"|,\@|`|,|'|\(|\)|[^\s()]+)/g;
+    const tokens = [];
+
+    lines.forEach((line, idx) => {
+      let match;
+      while ((match = regex.exec(line)) !== null) {
+        tokens.push({ value: match[0], line: idx + 1, col: match.index + 1 });
+      }
+    });
+
+    if (tokens.length === 0) return [];
+    let tokenIndex = 0;
+
+    function parseTokens() {
+      if (tokenIndex >= tokens.length) return null;
+      const tokObj = tokens[tokenIndex++];
+      const token = tokObj.value;
+      const line = tokObj.line;
+      const col = tokObj.col;
+
+      let parsed;
+      if (token === "'") {
+        parsed = ['QUOTE', parseTokens()];
+      } else if (token === '(') {
+        const list = [];
+        while (tokenIndex < tokens.length && tokens[tokenIndex].value !== ')') {
+          list.push(parseTokens());
+        }
+        tokenIndex++;
+        parsed = list;
+      } else if (token === ')') {
+        return null;
+      } else {
+        if (token.toUpperCase() === 'T') parsed = 'T';
+        else if (token.toUpperCase() === 'NIL') parsed = 'NIL';
+        else if (token.startsWith('"') && token.endsWith('"')) parsed = token;
+        else parsed = isNaN(token) ? token : Number(token);
+      }
+      return annotate(parsed, line, col);
+    }
+
+    const expressions = [];
+    while (tokenIndex < tokens.length) {
+      const expr = parseTokens();
+      if (expr !== null) expressions.push(expr);
+    }
+    return expressions;
+  }
+
+  const runBtn = document.getElementById('runBtn');
+  const codeInput = document.getElementById('codeInput');
+
+  function logToConsole(text, type) {
+    if (type === 'output-err') console.error(text);
+    else if (type === 'output-print') console.info(text);
+    else console.log(text);
+  }
+  activeAppendOutput = logToConsole;
+
+  function stopProgram() {
+    if (animationFrameId) {
+      cancelAnimationFrame(animationFrameId);
+      animationFrameId = null;
+    }
+    runBtn.textContent = 'RUN';
+    runBtn.classList.remove('running');
+  }
+
+  runBtn.addEventListener('click', function() {
+    if (animationFrameId) {
+      stopProgram();
+      console.log("--- Program Stopped ---");
+      return;
+    }
+
+    console.clear();
+    console.log("--- Running SectorLISP Program ---");
+    runBtn.textContent = 'STOP';
+    runBtn.classList.add('running');
+    
+    try {
+      const expressions = parseAllLispExpressions(codeInput.value);
+      if (expressions.length === 0) {
+        stopProgram();
+        return;
+      }
+
+      let globalEnv = makeEnv({...baseEnv.bindings});
+
+      for (const expr of expressions) {
+        try {
+          const rawResult = evaluate(expandMacros(expr), globalEnv);
+          trampoline(rawResult);
+        } catch (evalErr) {
+          if (evalErr instanceof LispRuntimeError) {
+            const loc = evalErr.line > 0 ? ` [Line ${evalErr.line}, Col ${evalErr.col}]` : '';
+            logToConsole(`Error${loc}: ${evalErr.message}`, "output-err");
+          } else {
+            logToConsole(`Error: ${evalErr.message}`, "output-err");
+          }
+          stopProgram();
+          return;
+        }
+      }
+
+      let updateFn = null;
+      try { updateFn = assoc(globalEnv, 'UPDATE', 0, 0); } catch (e) {}
+
+      if (updateFn) {
+        function loop() {
+          try {
+            trampoline(callClosure(updateFn, [], 0, 0));
+          } catch (updateErr) {
+            if (updateErr instanceof LispRuntimeError) {
+              const loc = updateErr.line > 0 ? ` [Line ${updateErr.line}, Col ${updateErr.col}]` : '';
+              logToConsole(`Update Error${loc}: ${updateErr.message}`, "output-err");
+            } else {
+              logToConsole(`Update Error: ${updateErr.message}`, "output-err");
+            }
+            stopProgram();
+            return;
+          }
+          animationFrameId = requestAnimationFrame(loop);
+        }
+        animationFrameId = requestAnimationFrame(loop);
+      } else {
+        stopProgram();
+      }
+    } catch (parseErr) {
+      logToConsole(`Parsing Error: ${parseErr.message}`, "output-err");
+      stopProgram();
+    }
+  });
+</script>
+</body>
+</html>
