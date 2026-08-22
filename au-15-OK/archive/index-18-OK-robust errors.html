@@ -1,0 +1,595 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SectorLISP JS IDE - Robust Error Handling</title>
+  <style>
+    body {
+      background-color: #0d1117;
+      color: #c9d1d9;
+      font-family: 'Courier New', Courier, monospace;
+      margin: 0;
+      padding: 20px;
+      display: flex;
+      flex-direction: column;
+      height: 100vh;
+      box-sizing: border-box;
+    }
+    h2 {
+      margin-top: 0;
+      color: #58a6ff;
+      border-bottom: 1px solid #30363d;
+      padding-bottom: 10px;
+    }
+    .container {
+      display: flex;
+      gap: 20px;
+      flex: 1;
+      min-height: 0;
+    }
+    .pane {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+    }
+    label {
+      margin-bottom: 8px;
+      color: #8b949e;
+      font-weight: bold;
+    }
+    textarea, #output {
+      flex: 1;
+      background-color: #161b22;
+      border: 1px solid #30363d;
+      border-radius: 6px;
+      padding: 12px;
+      color: #c9d1d9;
+      font-family: 'Courier New', Courier, monospace;
+      font-size: 14px;
+      resize: none;
+      box-sizing: border-box;
+      outline: none;
+    }
+    textarea:focus, #output:focus {
+      border-color: #58a6ff;
+    }
+    #output {
+      overflow-y: auto;
+      white-space: pre-wrap;
+      word-break: break-all;
+    }
+    .controls {
+      margin-top: 15px;
+      display: flex;
+      justify-content: flex-end;
+    }
+    button {
+      background-color: #238636;
+      color: white;
+      border: none;
+      border-radius: 6px;
+      padding: 10px 20px;
+      font-family: 'Courier New', Courier, monospace;
+      font-size: 16px;
+      font-weight: bold;
+      cursor: pointer;
+      transition: background-color 0.2s;
+    }
+    button:hover {
+      background-color: #2ea043;
+    }
+    .output-ok { color: #7ee787; margin-bottom: 6px; }
+    .output-err { color: #ff7b72; margin-bottom: 6px; }
+    .output-system { color: #8b949e; font-style: italic; margin-bottom: 6px; }
+    .output-print { color: #d2a8ff; margin-bottom: 6px; }
+  </style>
+</head>
+<body>
+
+  <h2>SectorLISP JS IDE (Robust Error Handling)</h2>
+  
+  <div class="container">
+    <div class="pane">
+      <label for="codeInput">Source Code / Expressions:</label>
+      <textarea id="codeInput" placeholder=";; Test Try/Catch and Line-Numbered Errors:
+(BEGIN
+  (TRY
+    (BEGIN
+      (PRINT &quot;Attempting division by zero...&quot;)
+      (/ 100 0))
+    (CATCH err
+      (PRINT &quot;Caught error message:&quot; err)))
+    
+  (TRY
+    (ERROR &quot;Custom user exception occurred!&quot;)
+    (CATCH msg
+      (PRINT msg))))">;; Test Try/Catch and Line-Numbered Errors:
+(BEGIN
+  (TRY
+    (BEGIN
+      (PRINT "Attempting division by zero...")
+      (/ 100 0))
+    (CATCH err
+      (PRINT "Caught error message:" err)))
+    
+  (TRY
+    (ERROR "Custom user exception occurred!")
+    (CATCH msg
+      (PRINT msg))))</textarea>
+    </div>
+
+    <div class="pane">
+      <label for="output">Execution Output:</label>
+      <div id="output">Click "Run Code" to evaluate your expressions.</div>
+    </div>
+  </div>
+
+  <div class="controls">
+    <button id="runBtn">Run Code</button>
+  </div>
+
+<script>
+  class LispRuntimeError extends Error {
+    constructor(message, line = 0, col = 0, expr = null) {
+      super(message);
+      this.name = "LispRuntimeError";
+      this.line = line;
+      this.col = col;
+      this.expr = expr;
+    }
+  }
+
+  function unescapeString(str) {
+    return str
+      .replace(/\\n/g, '\n')
+      .replace(/\\t/g, '\t')
+      .replace(/\\"/g, '"')
+      .replace(/\\\\/g, '\\');
+  }
+
+  function lispToString(val) {
+    if (typeof val === 'string' && val.startsWith('"')) {
+      return unescapeString(val.slice(1, -1));
+    }
+    if (Array.isArray(val)) {
+      if (val.length === 0 || val === 'NIL') return 'NIL';
+      return '(' + val.map(lispToString).join(' ') + ')';
+    }
+    return String(val);
+  }
+
+  let activeAppendOutput = null;
+
+  function makeEnv(bindings = {}, parent = null) {
+    return { bindings, parent };
+  }
+
+  function lookupEnv(env, id, line, col) {
+    let current = env;
+    while (current !== null) {
+      if (Object.prototype.hasOwnProperty.call(current.bindings, id)) {
+        return current;
+      }
+      current = current.parent;
+    }
+    throw new LispRuntimeError(`Unbound symbol: ${id}`, line, col);
+  }
+
+  function assoc(env, id, line, col) {
+    const frame = lookupEnv(env, id, line, col);
+    return frame.bindings[id];
+  }
+
+  function defineVar(env, id, val) {
+    env.bindings[id] = val;
+    return val;
+  }
+
+  function setVar(env, id, val, line, col) {
+    const frame = lookupEnv(env, id, line, col);
+    frame.bindings[id] = val;
+    return val;
+  }
+
+  // --- BASE ENVIRONMENT ---
+  const baseEnv = makeEnv({
+    '+': (...args) => args.reduce((acc, curr) => acc + curr, 0),
+    '-': (...args) => {
+      if (args.length === 0) throw new LispRuntimeError("- requires at least 1 argument");
+      if (args.length === 1) return -args[0];
+      return args.reduce((acc, curr, idx) => (idx === 0 ? curr : acc - curr), 0);
+    },
+    '*': (...args) => args.reduce((acc, curr) => acc * curr, 1),
+    '/': (...args) => {
+      if (args.length === 0) throw new LispRuntimeError("/ requires at least 1 argument");
+      if (args.some(x => x === 0)) throw new LispRuntimeError("Division by zero");
+      if (args.length === 1) return 1 / args[0];
+      return args.reduce((acc, curr, idx) => (idx === 0 ? curr : acc / curr), 0);
+    },
+    'MOD': (a, b) => a % b,
+    'ABS': (a) => Math.abs(a),
+    'SGN': (a) => a < 0 ? -1 : (a > 0 ? 1 : 0),
+    '<': (a, b) => a < b ? 'T' : 'NIL',
+    '>': (a, b) => a > b ? 'T' : 'NIL',
+    '<=': (a, b) => a <= b ? 'T' : 'NIL',
+    '>=': (a, b) => a >= b ? 'T' : 'NIL',
+    '=': (a, b) => a === b ? 'T' : 'NIL',
+    'EQ': (a, b) => (a === b || (String(a) === 'NIL' && String(b) === 'NIL')) ? 'T' : 'NIL',
+    'NOT': (x) => (x === 'NIL') ? 'T' : 'NIL',
+    'ATOM': (x) => (!Array.isArray(x) || x === 'NIL' || x.length === 0) ? 'T' : 'NIL',
+    'CAR': (x) => x[0],
+    'CDR': (x) => x.slice(1),
+    'CONS': (x, y) => [x, ...y],
+    'LIST': (...args) => args.length === 0 ? 'NIL' : args,
+    'ERROR': (msg) => { throw new LispRuntimeError(msg); },
+    'PRINT': (...args) => {
+      const formatted = args.map(arg => {
+        let str = lispToString(arg);
+        if (str.startsWith('"') && str.endsWith('"')) {
+          str = unescapeString(str.slice(1, -1));
+        }
+        return str;
+      }).join(' ');
+
+      if (activeAppendOutput) {
+        activeAppendOutput(`[PRINT]: ${formatted}`, "output-print");
+      }
+      return args.length === 1 ? args[0] : args[args.length - 1];
+    },
+    'T': 'T',
+    'NIL': 'NIL'
+  });
+
+  class TailCall {
+    constructor(thunk) {
+      this.thunk = thunk;
+    }
+  }
+
+  function trampoline(result) {
+    while (result instanceof TailCall) {
+      result = result.thunk();
+    }
+    return result;
+  }
+
+  function evalQuasiquote(expr, env) {
+    if (!Array.isArray(expr)) return expr;
+    const [op] = expr;
+    if (op === 'UNQUOTE') return evaluate(expr[1], env);
+
+    const result = [];
+    for (let i = 0; i < expr.length; i++) {
+      const item = expr[i];
+      if (Array.isArray(item) && item[0] === 'UNQUOTE-SPLICING') {
+        const splicedVal = evaluate(item[1], env);
+        if (Array.isArray(splicedVal)) {
+          result.push(...splicedVal);
+        } else {
+          throw new LispRuntimeError(",@ requires a list to splice", expr._line, expr._col);
+        }
+      } else {
+        result.push(evaluateQuasiquote(item, env));
+      }
+    }
+    return result;
+  }
+
+  function evaluateQuasiquote(expr, env) {
+    if (!Array.isArray(expr)) return expr;
+    if (expr[0] === 'UNQUOTE') return evaluate(expr[1], env);
+    if (expr[0] === 'QUASIQUOTE') return ['QUASIQUOTE', expr[1]];
+    return evalQuasiquote(expr, env);
+  }
+
+  function evaluate(expr, env) {
+    const line = (Array.isArray(expr) || typeof expr === 'string') ? (expr._line || 0) : 0;
+    const col = (Array.isArray(expr) || typeof expr === 'string') ? (expr._col || 0) : 0;
+
+    if (typeof expr === 'number') return expr;
+    if (expr === 'T' || expr === 'NIL') return expr;
+    if (typeof expr === 'string' && expr.startsWith('"')) return expr;
+
+    if (typeof expr === 'string') {
+      return assoc(env, expr, line, col);
+    }
+
+    if (Array.isArray(expr)) {
+      const [op, ...args] = expr;
+
+      if (op === 'QUOTE') return args[0];
+      if (op === 'QUASIQUOTE') return evaluateQuasiquote(args[0], env);
+
+      if (op === 'TRY') {
+        const [bodyExpr, catchClause] = args;
+        try {
+          return trampoline(evaluate(bodyExpr, env));
+        } catch (err) {
+          if (catchClause && catchClause[0] === 'CATCH') {
+            const [, errVar, catchBody] = catchClause;
+            const catchBindings = {};
+            catchBindings[errVar] = err.message || String(err);
+            const catchEnv = makeEnv(catchBindings, env);
+            return trampoline(evaluate(catchBody, catchEnv));
+          }
+          throw err;
+        }
+      }
+
+      if (op === 'NOT') {
+        const val = evaluate(args[0], env);
+        return (val === 'NIL') ? 'T' : 'NIL';
+      }
+
+      if (op === 'AND') {
+        let res = 'T';
+        for (const arg of args) {
+          res = evaluate(arg, env);
+          if (res === 'NIL') return 'NIL';
+        }
+        return res;
+      }
+
+      if (op === 'OR') {
+        for (const arg of args) {
+          const res = evaluate(arg, env);
+          if (res !== 'NIL') return res;
+        }
+        return 'NIL';
+      }
+
+      if (op === 'COND') {
+        for (const clause of args) {
+          const [condition, result] = clause;
+          if (evaluate(condition, env) !== 'NIL') {
+            return evaluate(result, env);
+          }
+        }
+        return 'NIL';
+      }
+
+      if (op === 'LABEL') return expr;
+
+      if (op === 'LAMBDA') {
+        return ['CLOSURE', env, args[0], args[1]]; 
+      }
+
+      if (op === 'DEFMACRO') {
+        const [name, params, body] = args;
+        return defineVar(env, name, ['MACRO', env, params, body]);
+      }
+
+      if (op === 'BEGIN') {
+        let lastResult = 'NIL';
+        for (let i = 0; i < args.length; i++) {
+          if (i === args.length - 1) {
+            return evaluate(args[i], env);
+          }
+          lastResult = evaluate(args[i], env);
+        }
+        return lastResult;
+      }
+
+      if (op === 'DEFINE') {
+        const [name, valExpr] = args;
+        const evaluatedVal = evaluate(valExpr, env);
+        return defineVar(env, name, evaluatedVal);
+      }
+
+      if (op === 'SET!') {
+        const [name, valExpr] = args;
+        const evaluatedVal = evaluate(valExpr, env);
+        return setVar(env, name, evaluatedVal, line, col);
+      }
+
+      const evaluatedOp = evaluate(op, env);
+
+      if (Array.isArray(evaluatedOp) && evaluatedOp[0] === 'MACRO') {
+        const [, macroEnv, params, body] = evaluatedOp;
+        const callBindings = {};
+        for (let i = 0; i < params.length; i++) {
+          callBindings[params[i]] = args[i];
+        }
+        const callEnv = makeEnv(callBindings, macroEnv);
+        const expandedCode = evaluate(body, callEnv);
+        return new TailCall(() => evaluate(expandedCode, env));
+      }
+
+      const evaluatedArgs = args.map(arg => evaluate(arg, env));
+
+      if (typeof evaluatedOp === 'function') {
+        try {
+          return evaluatedOp(...evaluatedArgs);
+        } catch (jsErr) {
+          if (jsErr instanceof LispRuntimeError) throw jsErr;
+          throw new LispRuntimeError(jsErr.message, line, col);
+        }
+      }
+
+      if (Array.isArray(evaluatedOp) && evaluatedOp[0] === 'LABEL') {
+        const [, name, lambdaExpr] = evaluatedOp;
+        const recursiveBindings = {};
+        recursiveBindings[name] = evaluatedOp;
+        const recursiveEnv = makeEnv(recursiveBindings, env);
+        
+        if (lambdaExpr[0] === 'LAMBDA') {
+          const [, params, body] = lambdaExpr;
+          const callBindings = {};
+          for (let i = 0; i < params.length; i++) {
+            callBindings[params[i]] = evaluatedArgs[i];
+          }
+          const callEnv = makeEnv(callBindings, recursiveEnv);
+          return new TailCall(() => evaluate(body, callEnv));
+        }
+      }
+
+      if (Array.isArray(evaluatedOp) && evaluatedOp[0] === 'CLOSURE') {
+        const [, closureEnv, params, body] = evaluatedOp;
+        const callBindings = {};
+        for (let i = 0; i < params.length; i++) {
+          callBindings[params[i]] = evaluatedArgs[i];
+        }
+        const callEnv = makeEnv(callBindings, closureEnv);
+        return new TailCall(() => evaluate(body, callEnv));
+      }
+
+      throw new LispRuntimeError(`Not a function or keyword: ${op}`, line, col);
+    }
+
+    throw new LispRuntimeError(`Unknown expression syntax: ${JSON.stringify(expr)}`, line, col);
+  }
+
+  function expandMacros(expr) {
+    if (!Array.isArray(expr)) return expr;
+    const [op, ...args] = expr;
+    const macroOp = typeof op === 'string' ? op.toUpperCase() : '';
+
+    if (macroOp === 'LET') {
+      const bindings = args[0];
+      const body = args[1];
+      const vars = bindings.map(b => b[0]);
+      const vals = bindings.map(b => expandMacros(b[1]));
+      return [['LAMBDA', vars, expandMacros(body)], ...vals];
+    }
+
+    if (macroOp === 'LETREC') {
+      const bindings = args[0];
+      const body = args[1];
+      let result = expandMacros(body);
+      for (let i = bindings.length - 1; i >= 0; i--) {
+        const [name, valExpr] = bindings[i];
+        result = [['LAMBDA', [name], result], ['LABEL', name, expandMacros(valExpr)]];
+      }
+      return result;
+    }
+
+    return expr.map(expandMacros);
+  }
+
+  function parseAllLispExpressions(text) {
+    const lines = text.split('\n');
+    let lineNum = 0;
+    let colNum = 0;
+    let charIndex = 0;
+
+    // Tokenize preserving line/col mapping
+    const regex = /("[^"\\]*(?:\\.[^"\\]*)*"|,\@|`|,|'|\(|\)|[^\s()]+)/g;
+    const tokens = [];
+
+    lines.forEach((line, idx) => {
+      let match;
+      while ((match = regex.exec(line)) !== null) {
+        tokens.push({
+          value: match[0],
+          line: idx + 1,
+          col: match.index + 1
+        });
+      }
+    });
+
+    if (tokens.length === 0) return [];
+
+    let tokenIndex = 0;
+
+    function parseTokens() {
+      if (tokenIndex >= tokens.length) return null;
+      const tokObj = tokens[tokenIndex++];
+      const token = tokObj.value;
+      const line = tokObj.line;
+      const col = tokObj.col;
+
+      let parsed;
+      if (token === '`') {
+        const inner = parseTokens();
+        parsed = ['QUASIQUOTE', inner];
+      } else if (token === ',') {
+        const inner = parseTokens();
+        parsed = ['UNQUOTE', inner];
+      } else if (token === ',@') {
+        const inner = parseTokens();
+        parsed = ['UNQUOTE-SPLICING', inner];
+      } else if (token === "'") {
+        const inner = parseTokens();
+        parsed = ['QUOTE', inner];
+      } else if (token === '(') {
+        const list = [];
+        while (tokenIndex < tokens.length && tokens[tokenIndex].value !== ')') {
+          list.push(parseTokens());
+        }
+        tokenIndex++; // skip ')'
+        parsed = list;
+      } else if (token === ')') {
+        return null;
+      } else {
+        if (token.toUpperCase() === 'T') parsed = 'T';
+        else if (token.toUpperCase() === 'NIL') parsed = 'NIL';
+        else if (token.startsWith('"') && token.endsWith('"')) parsed = token;
+        else parsed = isNaN(token) ? token : Number(token);
+      }
+
+      if (Array.isArray(parsed) || typeof parsed === 'string') {
+        parsed._line = line;
+        parsed._col = col;
+      }
+      return parsed;
+    }
+
+    const expressions = [];
+    while (tokenIndex < tokens.length) {
+      const expr = parseTokens();
+      if (expr !== null) expressions.push(expr);
+    }
+
+    return expressions;
+  }
+
+  const runBtn = document.getElementById('runBtn');
+  const codeInput = document.getElementById('codeInput');
+  const outputDiv = document.getElementById('output');
+
+  function appendOutput(text, className) {
+    const div = document.createElement('div');
+    div.className = className;
+    div.textContent = text;
+    outputDiv.appendChild(div);
+  }
+
+  activeAppendOutput = appendOutput;
+
+  runBtn.addEventListener('click', function() {
+    outputDiv.innerHTML = ''; 
+    const codeText = codeInput.value;
+
+    try {
+      const expressions = parseAllLispExpressions(codeText);
+      if (expressions.length === 0) {
+        appendOutput("No expressions found.", "output-system");
+        return;
+      }
+
+      let globalEnv = makeEnv({...baseEnv.bindings});
+
+      for (const expr of expressions) {
+        try {
+          const expandedExpr = expandMacros(expr);
+          const rawResult = evaluate(expandedExpr, globalEnv);
+          const result = trampoline(rawResult);
+          appendOutput(`=> ${lispToString(result)}`, "output-ok");
+        } catch (evalErr) {
+          if (evalErr instanceof LispRuntimeError) {
+            const loc = evalErr.line > 0 ? ` [Line ${evalErr.line}, Col ${evalErr.col}]` : '';
+            appendOutput(`Error${loc}: ${evalErr.message}`, "output-err");
+          } else {
+            appendOutput(`Error: ${evalErr.message}`, "output-err");
+          }
+        }
+      }
+    } catch (parseErr) {
+      appendOutput(`Parsing Error: ${parseErr.message}`, "output-err");
+    }
+  });
+</script>
+
+</body>
+</html>

@@ -1,0 +1,433 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SectorLISP JS IDE - TCO (Tail Call Optimized)</title>
+  <style>
+    body {
+      background-color: #0d1117;
+      color: #c9d1d9;
+      font-family: 'Courier New', Courier, monospace;
+      margin: 0;
+      padding: 20px;
+      display: flex;
+      flex-direction: column;
+      height: 100vh;
+      box-sizing: border-box;
+    }
+    h2 {
+      margin-top: 0;
+      color: #58a6ff;
+      border-bottom: 1px solid #30363d;
+      padding-bottom: 10px;
+    }
+    .container {
+      display: flex;
+      gap: 20px;
+      flex: 1;
+      min-height: 0;
+    }
+    .pane {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+    }
+    label {
+      margin-bottom: 8px;
+      color: #8b949e;
+      font-weight: bold;
+    }
+    textarea, #output {
+      flex: 1;
+      background-color: #161b22;
+      border: 1px solid #30363d;
+      border-radius: 6px;
+      padding: 12px;
+      color: #c9d1d9;
+      font-family: 'Courier New', Courier, monospace;
+      font-size: 14px;
+      resize: none;
+      box-sizing: border-box;
+      outline: none;
+    }
+    textarea:focus, #output:focus {
+      border-color: #58a6ff;
+    }
+    #output {
+      overflow-y: auto;
+      white-space: pre-wrap;
+      word-break: break-all;
+    }
+    .controls {
+      margin-top: 15px;
+      display: flex;
+      justify-content: flex-end;
+    }
+    button {
+      background-color: #238636;
+      color: white;
+      border: none;
+      border-radius: 6px;
+      padding: 10px 20px;
+      font-family: 'Courier New', Courier, monospace;
+      font-size: 16px;
+      font-weight: bold;
+      cursor: pointer;
+      transition: background-color 0.2s;
+    }
+    button:hover {
+      background-color: #2ea043;
+    }
+    .output-ok { color: #7ee787; margin-bottom: 6px; }
+    .output-err { color: #ff7b72; margin-bottom: 6px; }
+    .output-system { color: #8b949e; font-style: italic; margin-bottom: 6px; }
+    .output-print { color: #d2a8ff; margin-bottom: 6px; }
+  </style>
+</head>
+<body>
+
+  <h2>SectorLISP JS IDE with Tail Call Optimization (TCO)</h2>
+  
+  <div class="container">
+    <div class="pane">
+      <label for="codeInput">Source Code / Expressions:</label>
+      <textarea id="codeInput" placeholder=";; Deep tail-recursion test (won't stack overflow):
+(BEGIN
+  (DEFINE countdown 
+    (LABEL iter 
+      (LAMBDA (n) 
+        (COND 
+          ((EQ n 0) (PRINT &quot;Liftoff!&quot;))
+          (T (BEGIN (PRINT n) (iter (- n 1))))))))
+  (countdown 5))">;; Deep tail-recursion test (won't stack overflow):
+(BEGIN
+  (DEFINE countdown 
+    (LABEL iter 
+      (LAMBDA (n) 
+        (COND 
+          ((EQ n 0) (PRINT "Liftoff!"))
+          (T (BEGIN (PRINT n) (iter (- n 1))))))))
+  (countdown 5))</textarea>
+    </div>
+
+    <div class="pane">
+      <label for="output">Execution Output:</label>
+      <div id="output">Click "Run Code" to evaluate your expressions.</div>
+    </div>
+  </div>
+
+  <div class="controls">
+    <button id="runBtn">Run Code</button>
+  </div>
+
+<script>
+  function unescapeString(str) {
+    return str
+      .replace(/\\n/g, '\n')
+      .replace(/\\t/g, '\t')
+      .replace(/\\"/g, '"')
+      .replace(/\\\\/g, '\\');
+  }
+
+  function lispToString(val) {
+    if (typeof val === 'string' && val.startsWith('"')) {
+      const raw = val.slice(1, -1);
+      return unescapeString(raw);
+    }
+    if (Array.isArray(val)) {
+      if (val.length === 0 || val === 'NIL') return 'NIL';
+      return '(' + val.map(lispToString).join(' ') + ')';
+    }
+    return String(val);
+  }
+
+  let activeAppendOutput = null;
+
+  const baseEnv = [
+    ['+', (a, b) => a + b],
+    ['-', (a, b) => a - b],
+    ['*', (a, b) => a * b],
+    ['<', (a, b) => a < b ? 'T' : 'NIL'],
+    ['>', (a, b) => a > b ? 'T' : 'NIL'],
+    ['<=', (a, b) => a <= b ? 'T' : 'NIL'],
+    ['>=', (a, b) => a >= b ? 'T' : 'NIL'],
+    ['EQ', (a, b) => (a === b || (String(a) === 'NIL' && String(b) === 'NIL')) ? 'T' : 'NIL'],
+    ['ATOM', (x) => (!Array.isArray(x) || x === 'NIL' || x.length === 0) ? 'T' : 'NIL'],
+    ['CAR', (x) => x[0]],
+    ['CDR', (x) => x.slice(1)],
+    ['CONS', (x, y) => [x, ...y]],
+    ['LIST', (...args) => args.length === 0 ? 'NIL' : args],
+    ['PRINT', (x) => {
+      const formatted = lispToString(x);
+      if (activeAppendOutput) {
+        activeAppendOutput(`[PRINT]: ${formatted}`, "output-print");
+      }
+      return x;
+    }],
+    ['T', 'T'],
+    ['NIL', 'NIL']
+  ];
+
+  function assoc(id, e) {
+    if (e === 'NIL' || e.length === 0) {
+      throw new Error(`Unbound symbol: ${id}`);
+    }
+    const pair = e[0];
+    if (id === pair[0]) return pair[1];
+    return assoc(id, e.slice(1));
+  }
+
+  // Trampoline helper wrapper for TCO
+  class TailCall {
+    constructor(thunk) {
+      this.thunk = thunk;
+    }
+  }
+
+  function trampoline(result) {
+    while (result instanceof TailCall) {
+      result = result.thunk();
+    }
+    return result;
+  }
+
+  function evaluate(expr, env) {
+    if (typeof expr === 'number') return expr;
+    if (expr === 'T' || expr === 'NIL') return expr;
+    if (typeof expr === 'string' && expr.startsWith('"')) return expr;
+
+    if (typeof expr === 'string') {
+      return assoc(expr, env);
+    }
+
+    if (Array.isArray(expr)) {
+      const [op, ...args] = expr;
+
+      if (op === 'QUOTE') return args[0];
+
+      if (op === 'NOT') {
+        const val = evaluate(args[0], env);
+        return (val === 'NIL') ? 'T' : 'NIL';
+      }
+
+      if (op === 'AND') {
+        let res = 'T';
+        for (const arg of args) {
+          res = evaluate(arg, env);
+          if (res === 'NIL') return 'NIL';
+        }
+        return res;
+      }
+
+      if (op === 'OR') {
+        for (const arg of args) {
+          const res = evaluate(arg, env);
+          if (res !== 'NIL') return res;
+        }
+        return 'NIL';
+      }
+
+      if (op === 'COND') {
+        for (const clause of args) {
+          const [condition, result] = clause;
+          if (evaluate(condition, env) !== 'NIL') {
+            return evaluate(result, env);
+          }
+        }
+        return 'NIL';
+      }
+
+      if (op === 'LABEL') return expr;
+
+      if (op === 'LAMBDA') {
+        return ['CLOSURE', env, args[0], args[1]]; 
+      }
+
+      if (op === 'BEGIN') {
+        let lastResult = 'NIL';
+        for (let i = 0; i < args.length; i++) {
+          // If the last expression is a tail call, trampoline it directly
+          if (i === args.length - 1) {
+            return evaluate(args[i], env);
+          }
+          lastResult = evaluate(args[i], env);
+        }
+        return lastResult;
+      }
+
+      if (op === 'DEFINE') {
+        const [name, valExpr] = args;
+        const evaluatedVal = evaluate(valExpr, env);
+        env.unshift([name, evaluatedVal]);
+        return evaluatedVal;
+      }
+
+      if (op === 'SET!') {
+        const [name, valExpr] = args;
+        const evaluatedVal = evaluate(valExpr, env);
+        let current = env;
+        let found = false;
+        while (current !== 'NIL' && current.length > 0) {
+          const pair = current[0];
+          if (name === pair[0]) {
+            pair[1] = evaluatedVal;
+            found = true;
+            break;
+          }
+          current = current.slice(1);
+        }
+        if (!found) throw new Error(`Unbound symbol for assignment: ${name}`);
+        return evaluatedVal;
+      }
+
+      const evaluatedOp = evaluate(op, env);
+      const evaluatedArgs = args.map(arg => evaluate(arg, env));
+
+      if (typeof evaluatedOp === 'function') {
+        return evaluatedOp(...evaluatedArgs);
+      }
+
+      // TCO Execution for LABEL and CLOSURE tail calls
+      if (Array.isArray(evaluatedOp) && evaluatedOp[0] === 'LABEL') {
+        const [, name, lambdaExpr] = evaluatedOp;
+        const recursiveEnv = [[name, evaluatedOp], ...env];
+        
+        if (lambdaExpr[0] === 'LAMBDA') {
+          const [, params, body] = lambdaExpr;
+          let callEnv = recursiveEnv;
+          for (let i = 0; i < params.length; i++) {
+            callEnv = [[params[i], evaluatedArgs[i]], ...callEnv];
+          }
+          // Return a TailCall thunk instead of recursing directly on the call stack
+          return new TailCall(() => evaluate(body, callEnv));
+        }
+      }
+
+      if (Array.isArray(evaluatedOp) && evaluatedOp[0] === 'CLOSURE') {
+        const [, closureEnv, params, body] = evaluatedOp;
+        let callEnv = closureEnv;
+        
+        for (let i = 0; i < params.length; i++) {
+          callEnv = [[params[i], evaluatedArgs[i]], ...callEnv];
+        }
+        // Return a TailCall thunk for closures as well
+        return new TailCall(() => evaluate(body, callEnv));
+      }
+
+      throw new Error(`Not a function or keyword: ${op}`);
+    }
+
+    throw new Error(`Unknown expression syntax: ${JSON.stringify(expr)}`);
+  }
+
+  function expandMacros(expr) {
+    if (!Array.isArray(expr)) return expr;
+    const [op, ...args] = expr;
+    const macroOp = typeof op === 'string' ? op.toUpperCase() : '';
+
+    if (macroOp === 'LET') {
+      const bindings = args[0];
+      const body = args[1];
+      const vars = bindings.map(b => b[0]);
+      const vals = bindings.map(b => expandMacros(b[1]));
+      return [['LAMBDA', vars, expandMacros(body)], ...vals];
+    }
+
+    if (macroOp === 'LETREC') {
+      const bindings = args[0];
+      const body = args[1];
+      let result = expandMacros(body);
+      for (let i = bindings.length - 1; i >= 0; i--) {
+        const [name, valExpr] = bindings[i];
+        result = [['LAMBDA', [name], result], ['LABEL', name, expandMacros(valExpr)]];
+      }
+      return result;
+    }
+
+    return expr.map(expandMacros);
+  }
+
+  function parseAllLispExpressions(text) {
+    const cleanText = text.replace(/;.*$/gm, '').trim();
+    if (!cleanText) return [];
+
+    const regex = /("[^"\\]*(?:\\.[^"\\]*)*"|\(|\)|[^\s()]+)/g;
+    const tokens = cleanText.match(regex);
+    if (!tokens) return [];
+
+    let index = 0;
+
+    function parseTokens() {
+      if (index >= tokens.length) return null;
+      const token = tokens[index++];
+      if (token === '(') {
+        const list = [];
+        while (index < tokens.length && tokens[index] !== ')') {
+          list.push(parseTokens());
+        }
+        index++; 
+        return list;
+      } else if (token === ')') {
+        return null;
+      } else {
+        if (token.toUpperCase() === 'T') return 'T';
+        if (token.toUpperCase() === 'NIL') return 'NIL';
+        if (token.startsWith('"') && token.endsWith('"')) return token;
+        return isNaN(token) ? token : Number(token);
+      }
+    }
+
+    const expressions = [];
+    while (index < tokens.length) {
+      const expr = parseTokens();
+      if (expr !== null) expressions.push(expr);
+    }
+
+    return expressions;
+  }
+
+  const runBtn = document.getElementById('runBtn');
+  const codeInput = document.getElementById('codeInput');
+  const outputDiv = document.getElementById('output');
+
+  function appendOutput(text, className) {
+    const div = document.createElement('div');
+    div.className = className;
+    div.textContent = text;
+    outputDiv.appendChild(div);
+  }
+
+  activeAppendOutput = appendOutput;
+
+  runBtn.addEventListener('click', function() {
+    outputDiv.innerHTML = ''; 
+    const codeText = codeInput.value;
+
+    try {
+      const expressions = parseAllLispExpressions(codeText);
+      if (expressions.length === 0) {
+        appendOutput("No expressions found.", "output-system");
+        return;
+      }
+
+      let globalEnv = [...baseEnv];
+      for (const expr of expressions) {
+        try {
+          const expandedExpr = expandMacros(expr);
+          // Wrap top-level evaluation in the trampoline loop runner
+          const rawResult = evaluate(expandedExpr, globalEnv);
+          const result = trampoline(rawResult);
+          appendOutput(`=> ${lispToString(result)}`, "output-ok");
+        } catch (evalErr) {
+          appendOutput(`Error in expression: ${evalErr.message}`, "output-err");
+        }
+      }
+    } catch (parseErr) {
+      appendOutput(`Parsing Error: ${parseErr.message}`, "output-err");
+    }
+  });
+</script>
+
+</body>
+</html>

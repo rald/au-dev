@@ -25,25 +25,3 @@
 (define sweetie (lambda (n)
 	(list-get sweetie-16 n)
 ))
-
-(define rnd (lambda (n)
-	(floor (* (random) n))
-))
-
-(define setup (lambda () (begin
-  (cls (sweetie 0))
-  
-  (let ((i 0) (j 0))
-    (while (< j 16) (begin
-      (set! i 0)
-      (while (< i 16) (begin
-        (text (chr (+ (* j 16) i)) (* i 8) (* j 8) (sweetie 12))
-        (set! i (+ i 1))
-      ))
-      (set! j (+ j 1))
-    ))
-  )
-)))
-
-(define update (lambda (dt) (begin
-)))

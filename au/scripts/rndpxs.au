@@ -1,0 +1,16 @@
+(define rnd (lambda (n)
+  (floor (* (random) n))
+))
+
+(define setup (lambda () (begin
+  (cls)
+)))
+
+(define update (lambda (dt) (begin  
+  (let ((c 1000))
+    (while (> c 0) (begin
+      (pset (* 128 (random)) (* 128 (random)) (color (rnd 256) (rnd 256) (rnd 256)))
+      (set! c (- c 1))      
+    ))
+  )  
+)))
