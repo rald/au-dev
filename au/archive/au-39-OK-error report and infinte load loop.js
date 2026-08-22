@@ -388,11 +388,6 @@ const baseEnv = makeEnv({
       url = url.slice(1, -1);
     }
     
-    // Check for empty or blank URL strings
-    if (!url || url.trim() === "") {
-      throw new LispRuntimeError("Failed to load script: URL cannot be empty");
-    }
-    
     // Prevent load loops / circular dependencies[cite: 1]
     if (loadingStack.has(url)) {
       throw new LispRuntimeError(`Infinite load loop detected: script already loading -> ${url}`);

@@ -203,8 +203,6 @@ const codeInput = document.getElementById('codeInput');
 const activeKeys = new Set();
 const keyPressedEvents = [];
 const keyReleasedEvents = [];
-const loadingStack = new Set(); // Guard set to prevent load loops[cite: 1]
-const fileStack = ['<main>']; // Tracks active file context for errors
 
 window.addEventListener('keydown', (e) => {
   if (document.activeElement === codeInput) {
@@ -304,9 +302,6 @@ function stopProgram() {
   activeMouseButtons.clear();
   mouseDeltaX = 0;
   mouseDeltaY = 0;
-  loadingStack.clear(); // Clear active load tracker on stop[cite: 1]
-  fileStack.length = 1; // Reset to main context
-  fileStack[0] = '<main>';
   canvas.style.cursor = 'default';
   if (animationFrameId) {
     cancelAnimationFrame(animationFrameId);
@@ -387,19 +382,6 @@ const baseEnv = makeEnv({
     if (url.startsWith('"') && url.endsWith('"')) {
       url = url.slice(1, -1);
     }
-    
-    // Check for empty or blank URL strings
-    if (!url || url.trim() === "") {
-      throw new LispRuntimeError("Failed to load script: URL cannot be empty");
-    }
-    
-    // Prevent load loops / circular dependencies[cite: 1]
-    if (loadingStack.has(url)) {
-      throw new LispRuntimeError(`Infinite load loop detected: script already loading -> ${url}`);
-    }
-
-    loadingStack.add(url);
-    fileStack.push(url);
     try {
       const response = await fetch(url);
       if (!response.ok) {
@@ -420,9 +402,6 @@ const baseEnv = makeEnv({
     } catch (err) {
       if (err instanceof LispRuntimeError) throw err;
       throw new LispRuntimeError(err.message);
-    } finally {
-      loadingStack.delete(url);
-      fileStack.pop();
     }
   },
 
@@ -1130,12 +1109,11 @@ runBtn.addEventListener('click', async function() {
         if (evalErr instanceof ProgramEndSignal) {
           return;
         }
-        const currentFile = fileStack[fileStack.length - 1] || '<main>';
         if (evalErr instanceof LispRuntimeError) {
-          const loc = evalErr.line > 0 ? ` [File: ${currentFile}, Line ${evalErr.line}, Col ${evalErr.col}]` : ` [File: ${currentFile}]`;
+          const loc = evalErr.line > 0 ? ` [Line ${evalErr.line}, Col ${evalErr.col}]` : '';
           logToConsole(`Error${loc}: ${evalErr.message}`, "output-err");
         } else {
-          logToConsole(`Error [File: ${currentFile}]: ${evalErr.message}`, "output-err");
+          logToConsole(`Error: ${evalErr.message}`, "output-err");
         }
         stopProgram();
         return;
@@ -1152,12 +1130,11 @@ runBtn.addEventListener('click', async function() {
         trampoline(setupRes);
       } catch (setupErr) {
         if (setupErr instanceof ProgramEndSignal) return;
-        const currentFile = fileStack[fileStack.length - 1] || '<main>';
         if (setupErr instanceof LispRuntimeError) {
-          const loc = setupErr.line > 0 ? ` [File: ${currentFile}, Line ${setupErr.line}, Col ${setupErr.col}]` : ` [File: ${currentFile}]`;
+          const loc = setupErr.line > 0 ? ` [Line ${setupErr.line}, Col ${setupErr.col}]` : '';
           logToConsole(`Setup Error${loc}: ${setupErr.message}`, "output-err");
         } else {
-          logToConsole(`Setup Error [File: ${currentFile}]: ${setupErr.message}`, "output-err");
+          logToConsole(`Setup Error: ${setupErr.message}`, "output-err");
         }
         stopProgram();
         return;
@@ -1179,9 +1156,7 @@ runBtn.addEventListener('click', async function() {
           if (updateRes instanceof Promise) {
             updateRes.then(res => trampoline(res)).catch(updateErr => {
               if (!(updateErr instanceof ProgramEndSignal)) {
-                const currentFile = fileStack[fileStack.length - 1] || '<main>';
-                const loc = updateErr.line > 0 ? ` [File: ${currentFile}, Line ${updateErr.line}, Col ${updateErr.col}]` : ` [File: ${currentFile}]`;
-                logToConsole(`Update Error${loc}: ${updateErr.message}`, "output-err");
+                logToConsole(`Update Error: ${updateErr.message}`, "output-err");
                 stopProgram();
               }
             });
@@ -1190,12 +1165,11 @@ runBtn.addEventListener('click', async function() {
           }
         } catch (updateErr) {
           if (updateErr instanceof ProgramEndSignal) return;
-          const currentFile = fileStack[fileStack.length - 1] || '<main>';
           if (updateErr instanceof LispRuntimeError) {
-            const loc = updateErr.line > 0 ? ` [File: ${currentFile}, Line ${updateErr.line}, Col ${updateErr.col}]` : ` [File: ${currentFile}]`;
+            const loc = updateErr.line > 0 ? ` [Line ${updateErr.line}, Col ${updateErr.col}]` : '';
             logToConsole(`Update Error${loc}: ${updateErr.message}`, "output-err");
           } else {
-            logToConsole(`Update Error [File: ${currentFile}]: ${updateErr.message}`, "output-err");
+            logToConsole(`Update Error: ${updateErr.message}`, "output-err");
           }
           stopProgram();
           return;
@@ -1213,8 +1187,7 @@ runBtn.addEventListener('click', async function() {
       stopProgram();
     }
   } catch (parseErr) {
-    const currentFile = fileStack[fileStack.length - 1] || '<main>';
-    logToConsole(`Parsing Error [File: ${currentFile}]: ${parseErr.message}`, "output-err");
+    logToConsole(`Parsing Error: ${parseErr.message}`, "output-err");
     stopProgram();
   }
 });
