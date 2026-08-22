@@ -302,9 +302,6 @@ function setVar(env, id, val, line, col) {
   return val;
 }
 
-// Global reference for active environment bindings access during dynamic execution
-let globalEnv = null;
-
 const baseEnv = makeEnv({
   '+': (...args) => args.reduce((acc, curr) => acc + curr, 0),
   '-': (...args) => {
@@ -337,31 +334,6 @@ const baseEnv = makeEnv({
   'bitnot': (a) => ~a,
   'shl': (a, b) => a << b,
   'shr': (a, b) => a >> b,
-
-  // Async Load Primitive[cite: 1]
-  'load': async (urlExpr) => {
-    let url = lispToString(urlExpr);
-    if (url.startsWith('"') && url.endsWith('"')) {
-      url = url.slice(1, -1);
-    }
-    try {
-      const response = await fetch(url);
-      if (!response.ok) {
-        throw new LispRuntimeError(`Failed to fetch script from URL: ${url}`);
-      }
-      const codeText = await response.text();
-      const expressions = parseAllLispExpressions(codeText);
-      
-      let lastResult = 'NIL';
-      for (const expr of expressions) {
-        const rawResult = evaluate(expandMacros(expr), globalEnv);
-        lastResult = trampoline(rawResult);
-      }
-      return lastResult;
-    } catch (err) {
-      throw new LispRuntimeError(err.message);
-    }
-  },
 
   // Character code primitives
   'ord': (str) => {
@@ -748,15 +720,6 @@ function evaluate(expr, env) {
 
     try {
       const res = callClosure(evaluatedOp, evaluatedArgs, line, col);
-      
-      // Handle asynchronous Promise returns (e.g. from fetch-based 'load')
-      if (res instanceof Promise) {
-        return res.then(val => trampoline(val)).catch(jsErr => {
-          if (jsErr instanceof LispRuntimeError) throw jsErr;
-          throw new LispRuntimeError(jsErr.message, line, col);
-        });
-      }
-
       return res instanceof TailCall ? trampoline(res) : res;
     } catch (jsErr) {
       if (jsErr instanceof ProgramEndSignal) throw jsErr;
@@ -1005,7 +968,7 @@ function logToConsole(text, type) {
 }
 activeAppendOutput = logToConsole;
 
-runBtn.addEventListener('click', async function() {
+runBtn.addEventListener('click', function() {
   if (animationFrameId) {
     stopProgram();
     console.log("--- Program Stopped ---");
@@ -1018,21 +981,17 @@ runBtn.addEventListener('click', async function() {
   runBtn.classList.add('running');
   
   try {
-    const codeContent = codeInput.value;
-    const expressions = parseAllLispExpressions(codeContent);
+    const expressions = parseAllLispExpressions(codeInput.value);
     if (expressions.length === 0) {
       stopProgram();
       return;
     }
 
-    globalEnv = makeEnv({...baseEnv.bindings});
+    let globalEnv = makeEnv({...baseEnv.bindings});
 
     for (const expr of expressions) {
       try {
-        let rawResult = evaluate(expandMacros(expr), globalEnv);
-        if (rawResult instanceof Promise) {
-          rawResult = await rawResult;
-        }
+        const rawResult = evaluate(expandMacros(expr), globalEnv);
         trampoline(rawResult);
       } catch (evalErr) {
         if (evalErr instanceof ProgramEndSignal) {
@@ -1054,9 +1013,7 @@ runBtn.addEventListener('click', async function() {
 
     if (setupFn) {
       try {
-        let setupRes = callClosure(setupFn, [], 0, 0);
-        if (setupRes instanceof Promise) setupRes = await setupRes;
-        trampoline(setupRes);
+        trampoline(callClosure(setupFn, [], 0, 0));
       } catch (setupErr) {
         if (setupErr instanceof ProgramEndSignal) return;
         if (setupErr instanceof LispRuntimeError) {
@@ -1081,17 +1038,7 @@ runBtn.addEventListener('click', async function() {
         lastTime = currentTime;
 
         try {
-          const updateRes = callClosure(updateFn, [dt], 0, 0);
-          if (updateRes instanceof Promise) {
-            updateRes.then(res => trampoline(res)).catch(updateErr => {
-              if (!(updateErr instanceof ProgramEndSignal)) {
-                logToConsole(`Update Error: ${updateErr.message}`, "output-err");
-                stopProgram();
-              }
-            });
-          } else {
-            trampoline(updateRes);
-          }
+          trampoline(callClosure(updateFn, [dt], 0, 0));
         } catch (updateErr) {
           if (updateErr instanceof ProgramEndSignal) return;
           if (updateErr instanceof LispRuntimeError) {

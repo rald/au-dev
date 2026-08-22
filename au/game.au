@@ -29,11 +29,3 @@
 (define rnd (lambda (n)
 	(floor (* (random) n))
 ))
-
-(define setup (lambda () (begin
-  (cls (sweetie 0))
-  (text "Hello World" 0 0 (sweetie 12))
-)))
-
-(define update (lambda (dt) (begin
-)))
