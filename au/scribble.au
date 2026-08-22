@@ -1,4 +1,4 @@
-(load "sweetie-16.au")
+(load "http://pantasya.mooo.com:14344/au/scripts/sweetie-16.au")
 
 (define hold NIL)
 (define x 0)
