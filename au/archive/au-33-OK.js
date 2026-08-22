@@ -68,28 +68,28 @@ function drawText(str, x, y, colorStr) {
   for (let i = 0; i < textStr.length; i++) {
     const code = textStr.charCodeAt(i);
     
-    if (code === 8) { // Backspace (\b)
+    if (code === 8) { // Backspace (\b) -> Move cursor back one character width (8px)
       cursorX = Math.max(startX, cursorX - 8);
       continue;
     }
 
-    if (code === 13) { // Carriage Return (\r)
+    if (code === 13) { // Carriage Return (\r) -> Reset X to startX
       cursorX = startX;
       continue;
     }
 
-    if (code === 10) { // Newline (\n)
+    if (code === 10) { // Newline (\n) -> Move down one line and reset X
       cursorX = startX;
       startY += 8;
       continue;
     }
     
-    if (code === 11) { // Vertical tab (\v)
+    if (code === 11) { // Vertical tab (\v) -> Move down one line without resetting X
       startY += 8;
       continue;
     }
     
-    if (code === 9) { // Tab (\t)
+    if (code === 9) { // Tab character support (\t) -> Advance by 4 spaces (32px)
       cursorX += 32;
       if (cursorX + 8 > CANVAS_WIDTH) {
         cursorX = startX;
@@ -229,43 +229,6 @@ window.addEventListener('keyup', (e) => {
   keyReleasedEvents.push(key);
 });
 
-// --- CANVAS INTERACTION & MOUSE TRACKING (WITHOUT CAPTURE) ---
-canvas.setAttribute('tabindex', '0');
-
-let mouseX = 64;
-let mouseY = 64;
-let mouseDeltaX = 0;
-let mouseDeltaY = 0;
-const activeMouseButtons = new Set();
-
-canvas.addEventListener('click', () => {
-  codeInput.blur();
-  canvas.focus();
-  // Pointer lock request removed to prevent mouse capture
-});
-
-window.addEventListener('mousemove', (e) => {
-  const rect = canvas.getBoundingClientRect();
-  const scaleX = canvas.width / rect.width;
-  const scaleY = canvas.height / rect.height;
-  mouseX = Math.max(0, Math.min(128, Math.floor((e.clientX - rect.left) * scaleX)));
-  mouseY = Math.max(0, Math.min(128, Math.floor((e.clientY - rect.top) * scaleY)));
-  mouseDeltaX = e.movementX;
-  mouseDeltaY = e.movementY;
-});
-
-window.addEventListener('mousedown', (e) => {
-  activeMouseButtons.add(e.button);
-});
-
-window.addEventListener('mouseup', (e) => {
-  activeMouseButtons.delete(e.button);
-});
-
-window.addEventListener('contextmenu', (e) => {
-  e.preventDefault();
-});
-
 class LispRuntimeError extends Error {
   constructor(message, line = 0, col = 0) {
     super(message);
@@ -300,10 +263,6 @@ function stopProgram() {
   activeKeys.clear();
   keyPressedEvents.length = 0;
   keyReleasedEvents.length = 0;
-  activeMouseButtons.clear();
-  mouseDeltaX = 0;
-  mouseDeltaY = 0;
-  canvas.style.cursor = 'default';
   if (animationFrameId) {
     cancelAnimationFrame(animationFrameId);
     animationFrameId = null;
@@ -343,6 +302,7 @@ function setVar(env, id, val, line, col) {
   return val;
 }
 
+// Global reference for active environment bindings access during dynamic execution
 let globalEnv = null;
 
 const baseEnv = makeEnv({
@@ -378,6 +338,7 @@ const baseEnv = makeEnv({
   'shl': (a, b) => a << b,
   'shr': (a, b) => a >> b,
 
+  // Async Load Primitive[cite: 1]
   'load': async (urlExpr) => {
     let url = lispToString(urlExpr);
     if (url.startsWith('"') && url.endsWith('"')) {
@@ -402,6 +363,7 @@ const baseEnv = makeEnv({
     }
   },
 
+  // Character code primitives
   'ord': (str) => {
     let s = lispToString(str);
     if (s.startsWith('"') && s.endsWith('"')) s = s.slice(1, -1);
@@ -412,6 +374,7 @@ const baseEnv = makeEnv({
     return `"${unescapeString(String.fromCharCode(c))}"`;
   },
 
+  // Keyboard primitives
   'key-down?': (keyStr) => {
     let key = lispToString(keyStr).toLowerCase();
     if (key.startsWith('"') && key.endsWith('"')) key = key.slice(1, -1);
@@ -436,38 +399,6 @@ const baseEnv = makeEnv({
       return 'T';
     }
     return 'NIL';
-  },
-
-  'mouse-x': () => mouseX,
-  'mouse-y': () => mouseY,
-  'mouse-dx': () => {
-    const dx = mouseDeltaX;
-    mouseDeltaX = 0;
-    return dx;
-  },
-  'mouse-dy': () => {
-    const dy = mouseDeltaY;
-    mouseDeltaY = 0;
-    return dy;
-  },
-  'mouse-down?': (button = 0) => {
-    const btn = Math.floor(button);
-    return activeMouseButtons.has(btn) ? 'T' : 'NIL';
-  },
-  'mouse-buttons-down?': (...buttons) => {
-    if (buttons.length === 0) return 'NIL';
-    for (const b of buttons) {
-      if (!activeMouseButtons.has(Math.floor(b))) return 'NIL';
-    }
-    return 'T';
-  },
-  'mouse-show': () => {
-    canvas.style.cursor = 'default';
-    return 'T';
-  },
-  'mouse-hide': () => {
-    canvas.style.cursor = 'none';
-    return 'T';
   },
 
   'color': (r, g, b, a = 255) => {
@@ -818,6 +749,7 @@ function evaluate(expr, env) {
     try {
       const res = callClosure(evaluatedOp, evaluatedArgs, line, col);
       
+      // Handle asynchronous Promise returns (e.g. from fetch-based 'load')
       if (res instanceof Promise) {
         return res.then(val => trampoline(val)).catch(jsErr => {
           if (jsErr instanceof LispRuntimeError) throw jsErr;

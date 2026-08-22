@@ -68,28 +68,28 @@ function drawText(str, x, y, colorStr) {
   for (let i = 0; i < textStr.length; i++) {
     const code = textStr.charCodeAt(i);
     
-    if (code === 8) { // Backspace (\b)
+    if (code === 8) { // Backspace (\b) -> Move cursor back one character width (8px)
       cursorX = Math.max(startX, cursorX - 8);
       continue;
     }
 
-    if (code === 13) { // Carriage Return (\r)
+    if (code === 13) { // Carriage Return (\r) -> Reset X to startX
       cursorX = startX;
       continue;
     }
 
-    if (code === 10) { // Newline (\n)
+    if (code === 10) { // Newline (\n) -> Move down one line and reset X
       cursorX = startX;
       startY += 8;
       continue;
     }
     
-    if (code === 11) { // Vertical tab (\v)
+    if (code === 11) { // Vertical tab (\v) -> Move down one line without resetting X
       startY += 8;
       continue;
     }
     
-    if (code === 9) { // Tab (\t)
+    if (code === 9) { // Tab character support (\t) -> Advance by 4 spaces (32px)
       cursorX += 32;
       if (cursorX + 8 > CANVAS_WIDTH) {
         cursorX = startX;
@@ -229,7 +229,7 @@ window.addEventListener('keyup', (e) => {
   keyReleasedEvents.push(key);
 });
 
-// --- CANVAS INTERACTION & MOUSE TRACKING (WITHOUT CAPTURE) ---
+// --- CANVAS INTERACTION & MOUSE/KEYBOARD CAPTURE ---
 canvas.setAttribute('tabindex', '0');
 
 let mouseX = 64;
@@ -241,17 +241,30 @@ const activeMouseButtons = new Set();
 canvas.addEventListener('click', () => {
   codeInput.blur();
   canvas.focus();
-  // Pointer lock request removed to prevent mouse capture
+  
+  if (document.pointerLockElement !== canvas) {
+    canvas.requestPointerLock().catch(err => {
+      console.warn("Pointer lock rejected:", err);
+    });
+  }
 });
 
 window.addEventListener('mousemove', (e) => {
-  const rect = canvas.getBoundingClientRect();
-  const scaleX = canvas.width / rect.width;
-  const scaleY = canvas.height / rect.height;
-  mouseX = Math.max(0, Math.min(128, Math.floor((e.clientX - rect.left) * scaleX)));
-  mouseY = Math.max(0, Math.min(128, Math.floor((e.clientY - rect.top) * scaleY)));
-  mouseDeltaX = e.movementX;
-  mouseDeltaY = e.movementY;
+  if (document.pointerLockElement === canvas) {
+    mouseDeltaX += e.movementX;
+    mouseDeltaY += e.movementY;
+    
+    mouseX = Math.max(0, Math.min(128, mouseX + e.movementX * 0.5));
+    mouseY = Math.max(0, Math.min(128, mouseY + e.movementY * 0.5));
+  } else {
+    const rect = canvas.getBoundingClientRect();
+    const scaleX = canvas.width / rect.width;
+    const scaleY = canvas.height / rect.height;
+    mouseX = Math.floor((e.clientX - rect.left) * scaleX);
+    mouseY = Math.floor((e.clientY - rect.top) * scaleY);
+    mouseDeltaX = 0;
+    mouseDeltaY = 0;
+  }
 });
 
 window.addEventListener('mousedown', (e) => {
@@ -303,7 +316,10 @@ function stopProgram() {
   activeMouseButtons.clear();
   mouseDeltaX = 0;
   mouseDeltaY = 0;
-  canvas.style.cursor = 'default';
+  canvas.style.cursor = 'default'; // Reset cursor visibility on stop
+  if (document.pointerLockElement === canvas) {
+    document.exitPointerLock();
+  }
   if (animationFrameId) {
     cancelAnimationFrame(animationFrameId);
     animationFrameId = null;
@@ -438,6 +454,7 @@ const baseEnv = makeEnv({
     return 'NIL';
   },
 
+  // Mouse primitives
   'mouse-x': () => mouseX,
   'mouse-y': () => mouseY,
   'mouse-dx': () => {
