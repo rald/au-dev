@@ -25,7 +25,3 @@
 (define sweetie (lambda (n)
 	(list-get sweetie-16 n)
 ))
-
-(define rnd (lambda (n)
-	(floor (* (random) n))
-))
