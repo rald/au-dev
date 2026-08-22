@@ -241,7 +241,6 @@ const activeMouseButtons = new Set();
 canvas.addEventListener('click', () => {
   codeInput.blur();
   canvas.focus();
-  // Pointer lock request removed to prevent mouse capture
 });
 
 window.addEventListener('mousemove', (e) => {
@@ -393,11 +392,15 @@ const baseEnv = makeEnv({
       
       let lastResult = 'NIL';
       for (const expr of expressions) {
-        const rawResult = evaluate(expandMacros(expr), globalEnv);
+        let rawResult = evaluate(expandMacros(expr), globalEnv);
+        if (rawResult instanceof Promise) {
+          rawResult = await rawResult;
+        }
         lastResult = trampoline(rawResult);
       }
       return lastResult;
     } catch (err) {
+      if (err instanceof LispRuntimeError) throw err;
       throw new LispRuntimeError(err.message);
     }
   },
